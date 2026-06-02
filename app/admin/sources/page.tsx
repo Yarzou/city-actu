@@ -23,7 +23,7 @@ export default function AdminSourcesPage() {
     city_id: '',
     category_id: '',
     name: '',
-    url: '',
+    url: 'xcvxcv',
     type: 'rss' as 'rss' | 'scraping',
     active: true,
   })
