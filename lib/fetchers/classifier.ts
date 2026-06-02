@@ -15,12 +15,6 @@ const KEYWORDS: Record<string, string[]> = {
     'atelier enfants', 'activité enfant', 'activités enfants', 'centre aéré',
     'centre aere',
   ],
-  'sorties-adultes': [
-    'sortie adulte', 'sorties adultes', 'balade', 'randonnée', 'randonnee',
-    'visite guidée', 'visite guidee', 'marché', 'marche', 'brocante',
-    'vide-grenier', 'vide grenier', 'dégustation', 'degustation', 'oenologie',
-    'œnologie', 'excursion', 'promenade', 'découverte', 'decouverte',
-  ],
   'sports': [
     'sport', 'sports', 'match', 'tournoi', 'championnat', 'compétition',
     'competition', 'football', 'tennis', 'natation', 'vélo', 'velo', 'course',
@@ -33,11 +27,6 @@ const KEYWORDS: Record<string, string[]> = {
     'fermeture', 'stationnement', 'aménagement', 'amenagement', 'rénovation',
     'renovation', 'construction', 'perturbation', 'coupure', 'réseau', 'reseau',
     'route barrée', 'route barree', 'interdiction',
-  ],
-  'emploi': [
-    'emploi', 'recrutement', "offre d'emploi", 'offres d\'emploi', 'candidature',
-    'stage', 'alternance', 'apprentissage', 'forum emploi', 'job', 'poste',
-    'embauche', 'contrat', 'cdi', 'cdd', 'mission locale',
   ],
 }
 

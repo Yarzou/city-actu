@@ -88,21 +88,15 @@ export interface Profile {
 
 // Category display metadata
 export const CATEGORY_COLORS: Record<string, string> = {
-  'infos-pratiques':  'bg-blue-100 text-blue-800',
   'sorties-enfants':  'bg-pink-100 text-pink-800',
-  'sorties-adultes':  'bg-rose-100 text-rose-800',
   'agenda':           'bg-purple-100 text-purple-800',
   'sports':           'bg-orange-100 text-orange-800',
   'travaux':          'bg-yellow-100 text-yellow-800',
-  'emploi':           'bg-green-100 text-green-800',
 }
 
 export const CATEGORY_ICONS: Record<string, string> = {
-  'infos-pratiques':  '🏛️',
   'sorties-enfants':  '🎠',
-  'sorties-adultes':  '🎭',
   'agenda':           '📅',
   'sports':           '⚽',
   'travaux':          '🚧',
-  'emploi':           '💼',
 }
