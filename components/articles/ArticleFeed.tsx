@@ -158,17 +158,15 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-6">
-        <div className="hidden sm:flex items-center gap-2 text-sm text-gray-400 mb-2">
-          <Link href="/" className="hover:text-brand-600 transition-colors">Accueil</Link>
-          <span>/</span>
-          <Link href={`/${citySlug}`} className="hover:text-brand-600 transition-colors">{cityName || citySlug}</Link>
-          {currentCategory && (
-            <>
-              <span>/</span>
-              <span className="text-gray-700">{currentCategory.name}</span>
-            </>
-          )}
-        </div>
+        {currentCategory && (
+          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-400 mb-2">
+            <Link href="/" className="hover:text-brand-600 transition-colors">Accueil</Link>
+            <span>/</span>
+            <Link href={`/${citySlug}`} className="hover:text-brand-600 transition-colors">{cityName || citySlug}</Link>
+            <span>/</span>
+            <span className="text-gray-700">{currentCategory.name}</span>
+          </div>
+        )}
         <h1 className="text-2xl font-bold text-gray-900">
           {currentCategory
             ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
