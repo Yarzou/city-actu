@@ -17,4 +17,7 @@
   <!-- Policies admin : gestion sources/cities/categories/articles -->
   <include file="liquibase/changelog/004-admin-rls.sql"/>
 
+  <!-- Nouvelle catégorie Sorties adultes -->
+  <include file="liquibase/changelog/005-sorties-adultes.sql"/>
+
 </databaseChangeLog>
