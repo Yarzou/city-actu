@@ -68,7 +68,7 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+              className="inline-flex items-center justify-center p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
               title="Voir l'article original"
             >
               <ExternalLink className="size-4" />
