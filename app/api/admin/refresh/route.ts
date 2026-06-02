@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       { sources: 0, fetched: 0, inserted: 0, skipped: 0, errors: 0 }
     )
 
-    return NextResponse.json({ ok: true, summary, timestamp: new Date().toISOString() })
+    return NextResponse.json({ ok: true, summary, results, timestamp: new Date().toISOString() })
   } catch (err) {
     console.error('[Admin] refresh erreur:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

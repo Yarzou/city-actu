@@ -72,12 +72,23 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     errors: [],
   }
 
+  // Guard: scraping sources without config can't be fetched
+  if (source.type === 'scraping' && !source.scraping_config) {
+    result.errors.push(`Config scraping manquante pour "${source.name}" — ajoutez les sélecteurs CSS dans l'admin`)
+    return result
+  }
+
   const items = source.type === 'rss'
     ? await fetchRssFeed(source)
     : await fetchScrapingSource(source)
 
   result.fetched = items.length
-  if (items.length === 0) return result
+  if (items.length === 0) {
+    if (!result.errors.length) {
+      result.errors.push(`Aucun article récupéré pour "${source.name}" — vérifiez l'URL et les sélecteurs`)
+    }
+    return result
+  }
 
   const supabase = getServiceClient()
 

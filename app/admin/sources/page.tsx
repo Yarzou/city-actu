@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +16,14 @@ const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   base_url: '',
 }
 
+interface FetchResultDetail {
+  sourceId: number
+  fetched: number
+  inserted: number
+  skipped: number
+  errors: string[]
+}
+
 export default function AdminSourcesPage() {
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -23,12 +31,16 @@ export default function AdminSourcesPage() {
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
   const [fetching, setFetching]     = useState<number | null>(null)
-  const [fetchResult, setFetchResult] = useState<Record<number, string>>({})
+  const [fetchResult, setFetchResult] = useState<Record<number, FetchResultDetail>>({})
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<{
     sources: number; fetched: number; inserted: number; skipped: number; errors: number
   } | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  // Inline edit scraping config
+  const [editingConfig, setEditingConfig] = useState<number | null>(null)
+  const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
+  const [savingConfig, setSavingConfig] = useState(false)
 
   // Form state
   const [form, setForm] = useState({
@@ -95,10 +107,40 @@ export default function AdminSourcesPage() {
     }
   }
 
+  function openEditConfig(source: Source) {
+    const cfg = source.scraping_config ?? EMPTY_SCRAPING_CONFIG
+    setEditConfig({
+      list_selector: cfg.list_selector ?? '',
+      title_selector: cfg.title_selector ?? '',
+      link_selector: cfg.link_selector ?? 'a',
+      content_selector: cfg.content_selector ?? '',
+      image_selector: cfg.image_selector ?? '',
+      date_selector: cfg.date_selector ?? '',
+      base_url: cfg.base_url ?? '',
+    })
+    setEditingConfig(editingConfig === source.id ? null : source.id)
+  }
+
+  async function saveEditConfig(sourceId: number) {
+    setSavingConfig(true)
+    const supabase = createClient()
+    const config = buildScrapingConfig(editConfig)
+    const { error } = await supabase
+      .from('sources')
+      .update({ scraping_config: config })
+      .eq('id', sourceId)
+    if (!error) {
+      setSources(prev => prev.map(s => s.id === sourceId ? { ...s, scraping_config: config } : s))
+      setEditingConfig(null)
+    }
+    setSavingConfig(false)
+  }
+
   async function refreshAllSources() {
     setRefreshing(true)
     setRefreshResult(null)
     setRefreshError(null)
+    setFetchResult({})
     try {
       const res = await fetch('/api/admin/refresh', { method: 'POST' })
       const data = await res.json()
@@ -106,6 +148,12 @@ export default function AdminSourcesPage() {
         setRefreshError('Vous devez être connecté pour rafraîchir les sources.')
       } else if (data.ok) {
         setRefreshResult(data.summary)
+        // Populate per-source results
+        if (Array.isArray(data.results)) {
+          const byId: Record<number, FetchResultDetail> = {}
+          for (const r of data.results as FetchResultDetail[]) byId[r.sourceId] = r
+          setFetchResult(byId)
+        }
       } else {
         setRefreshError(data.error ?? 'Erreur inconnue')
       }
@@ -117,7 +165,7 @@ export default function AdminSourcesPage() {
 
   async function testFetch(sourceId: number) {
     setFetching(sourceId)
-    setFetchResult(prev => ({ ...prev, [sourceId]: '' }))
+    setFetchResult(prev => ({ ...prev, [sourceId]: { sourceId, fetched: 0, inserted: 0, skipped: 0, errors: [] } }))
     try {
       const res = await fetch('/api/admin/refresh', {
         method: 'POST',
@@ -126,15 +174,14 @@ export default function AdminSourcesPage() {
       })
       const data = await res.json()
       if (res.status === 401) {
-        setFetchResult(prev => ({ ...prev, [sourceId]: '🔒 Non connecté' }))
-      } else if (data.ok) {
-        const s = data.summary
-        setFetchResult(prev => ({ ...prev, [sourceId]: `✅ ${s.fetched} récupérés, ${s.inserted} ajoutés` }))
+        setFetchResult(prev => ({ ...prev, [sourceId]: { sourceId, fetched: 0, inserted: 0, skipped: 0, errors: ['🔒 Non connecté'] } }))
+      } else if (data.ok && Array.isArray(data.results) && data.results.length > 0) {
+        setFetchResult(prev => ({ ...prev, [sourceId]: data.results[0] as FetchResultDetail }))
       } else {
-        setFetchResult(prev => ({ ...prev, [sourceId]: `❌ ${data.error ?? 'Erreur'}` }))
+        setFetchResult(prev => ({ ...prev, [sourceId]: { sourceId, fetched: 0, inserted: 0, skipped: 0, errors: [data.error ?? 'Erreur inconnue'] } }))
       }
     } catch {
-      setFetchResult(prev => ({ ...prev, [sourceId]: '❌ Erreur réseau' }))
+      setFetchResult(prev => ({ ...prev, [sourceId]: { sourceId, fetched: 0, inserted: 0, skipped: 0, errors: ['Erreur réseau'] } }))
     }
     setFetching(null)
   }
@@ -232,55 +279,8 @@ export default function AdminSourcesPage() {
             </div>
           </div>
 
-          {/* Scraping config — shown only for scraping type */}
           {form.type === 'scraping' && (
-            <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Configuration scraping (sélecteurs CSS)</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur liste <span className="text-red-500">*</span></label>
-                  <input required value={scrapingConfig.list_selector}
-                    onChange={e => setScrapingConfig(c => ({ ...c, list_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="article, .news-item" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur titre <span className="text-red-500">*</span></label>
-                  <input required value={scrapingConfig.title_selector}
-                    onChange={e => setScrapingConfig(c => ({ ...c, title_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="h2, h3, .title" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur lien</label>
-                  <input value={scrapingConfig.link_selector}
-                    onChange={e => setScrapingConfig(c => ({ ...c, link_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="a" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur contenu</label>
-                  <input value={scrapingConfig.content_selector ?? ''}
-                    onChange={e => setScrapingConfig(c => ({ ...c, content_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="p, .summary" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur image</label>
-                  <input value={scrapingConfig.image_selector ?? ''}
-                    onChange={e => setScrapingConfig(c => ({ ...c, image_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="img" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date</label>
-                  <input value={scrapingConfig.date_selector ?? ''}
-                    onChange={e => setScrapingConfig(c => ({ ...c, date_selector: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="time, .date" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
-                  <input value={scrapingConfig.base_url ?? ''}
-                    onChange={e => setScrapingConfig(c => ({ ...c, base_url: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="https://exemple.fr" />
-                </div>
-              </div>
-            </div>
+            <ScrapingConfigFields config={scrapingConfig} onChange={setScrapingConfig} required />
           )}
 
           <div className="flex gap-2 pt-2">
@@ -307,64 +307,200 @@ export default function AdminSourcesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sources.map((source) => (
-              <tr key={source.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-gray-900">{source.name}</span>
-                    {source.type === 'scraping' && !source.scraping_config && (
-                      <span title="Config scraping manquante">
-                        <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
+            {sources.map((source) => {
+              const result = fetchResult[source.id]
+              const hasErrors = result && result.errors.length > 0
+              return (
+                <>
+                  <tr key={source.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-gray-900">{source.name}</span>
+                        {source.type === 'scraping' && !source.scraping_config && (
+                          <span title="Config scraping manquante">
+                            <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate max-w-xs">{source.url}</div>
+                      {result && (
+                        <div className={cn('text-xs mt-1', hasErrors ? 'text-red-600' : 'text-green-600')}>
+                          {hasErrors
+                            ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
+                            : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés`
+                          }
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell text-gray-600">
+                      {(source.category as Category | undefined)?.name ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
+                        source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
+                        {source.type.toUpperCase()}
                       </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-400 truncate max-w-xs">{source.url}</div>
-                  {fetchResult[source.id] && (
-                    <div className="text-xs mt-0.5 text-gray-500">{fetchResult[source.id]}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => toggleActive(source)} title="Activer / désactiver">
+                        {source.active
+                          ? <CheckCircle className="size-5 text-brand-500" />
+                          : <XCircle className="size-5 text-gray-300" />}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <button
+                          onClick={() => testFetch(source.id)}
+                          disabled={fetching === source.id}
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors"
+                          title="Tester le fetch"
+                        >
+                          <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
+                        </button>
+                        {source.type === 'scraping' && (
+                          <button
+                            onClick={() => openEditConfig(source)}
+                            className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
+                              editingConfig === source.id && 'text-brand-600 bg-brand-50')}
+                            title="Éditer la config scraping"
+                          >
+                            <Settings className="size-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteSource(source.id)}
+                          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Inline scraping config editor */}
+                  {source.type === 'scraping' && editingConfig === source.id && (
+                    <tr key={`${source.id}-config`}>
+                      <td colSpan={5} className="px-4 pb-4 pt-0">
+                        <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
+                          <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">
+                            Config scraping — {source.name}
+                          </p>
+                          <ScrapingConfigFields config={editConfig} onChange={setEditConfig} required />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveEditConfig(source.id)}
+                              disabled={savingConfig}
+                              className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50"
+                            >
+                              {savingConfig ? 'Enregistrement…' : 'Enregistrer'}
+                            </button>
+                            <button
+                              onClick={() => setEditingConfig(null)}
+                              className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-                <td className="px-4 py-3 hidden sm:table-cell text-gray-600">
-                  {(source.category as Category | undefined)?.name ?? '—'}
-                </td>
-                <td className="px-4 py-3 hidden md:table-cell">
-                  <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
-                    source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
-                    {source.type.toUpperCase()}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <button onClick={() => toggleActive(source)} title="Activer / désactiver">
-                    {source.active
-                      ? <CheckCircle className="size-5 text-brand-500" />
-                      : <XCircle className="size-5 text-gray-300" />}
-                  </button>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 justify-end">
-                    <button
-                      onClick={() => testFetch(source.id)}
-                      disabled={fetching === source.id}
-                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors"
-                      title="Tester le fetch"
-                    >
-                      <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
-                    </button>
-                    <button
-                      onClick={() => deleteSource(source.id)}
-                      className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                      title="Supprimer"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                </>
+              )
+            })}
           </tbody>
         </table>
         {sources.length === 0 && (
           <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ScrapingConfigFields({
+  config,
+  onChange,
+  required,
+}: {
+  config: ScrapingConfig
+  onChange: (c: ScrapingConfig) => void
+  required?: boolean
+}) {
+  return (
+    <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
+      <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Configuration scraping (sélecteurs CSS)</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Sélecteur liste {required && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            required={required}
+            value={config.list_selector}
+            onChange={e => onChange({ ...config, list_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="article, .news-item, li.event"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Sélecteur titre {required && <span className="text-red-500">*</span>}
+          </label>
+          <input
+            required={required}
+            value={config.title_selector}
+            onChange={e => onChange({ ...config, title_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="h2, h3, .title"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur lien</label>
+          <input
+            value={config.link_selector}
+            onChange={e => onChange({ ...config, link_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="a"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur contenu</label>
+          <input
+            value={config.content_selector ?? ''}
+            onChange={e => onChange({ ...config, content_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="p, .summary"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur image</label>
+          <input
+            value={config.image_selector ?? ''}
+            onChange={e => onChange({ ...config, image_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="img"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date</label>
+          <input
+            value={config.date_selector ?? ''}
+            onChange={e => onChange({ ...config, date_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="time, .date"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
+          <input
+            value={config.base_url ?? ''}
+            onChange={e => onChange({ ...config, base_url: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder="https://exemple.fr"
+          />
+        </div>
       </div>
     </div>
   )
