@@ -1,0 +1,263 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
+import type { Source, Category, City } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+export default function AdminSourcesPage() {
+  const [sources, setSources]       = useState<Source[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [cities, setCities]         = useState<City[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [showForm, setShowForm]     = useState(false)
+  const [fetching, setFetching]     = useState<number | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshResult, setRefreshResult] = useState<{
+    sources: number; fetched: number; inserted: number; skipped: number; errors: number
+  } | null>(null)
+
+  // Form state
+  const [form, setForm] = useState({
+    city_id: '',
+    category_id: '',
+    name: '',
+    url: '',
+    type: 'rss' as 'rss' | 'scraping',
+    active: true,
+  })
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const [{ data: src }, { data: cats }, { data: cts }] = await Promise.all([
+        supabase.from('sources').select('*, city:cities(id,name), category:categories(id,name,slug)').order('name'),
+        supabase.from('categories').select('*').order('name'),
+        supabase.from('cities').select('*').order('name'),
+      ])
+      setSources(src ?? [])
+      setCategories(cats ?? [])
+      setCities(cts ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function toggleActive(source: Source) {
+    const supabase = createClient()
+    await supabase.from('sources').update({ active: !source.active }).eq('id', source.id)
+    setSources(prev => prev.map(s => s.id === source.id ? { ...s, active: !s.active } : s))
+  }
+
+  async function deleteSource(id: number) {
+    if (!confirm('Supprimer cette source ?')) return
+    const supabase = createClient()
+    await supabase.from('sources').delete().eq('id', id)
+    setSources(prev => prev.filter(s => s.id !== id))
+  }
+
+  async function addSource(e: React.FormEvent) {
+    e.preventDefault()
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('sources')
+      .insert({
+        city_id: parseInt(form.city_id),
+        category_id: parseInt(form.category_id),
+        name: form.name,
+        url: form.url,
+        type: form.type,
+        active: form.active,
+      })
+      .select('*, city:cities(id,name), category:categories(id,name,slug)')
+      .single()
+    if (!error && data) {
+      setSources(prev => [...prev, data])
+      setShowForm(false)
+      setForm({ city_id: '', category_id: '', name: '', url: '', type: 'rss', active: true })
+    }
+  }
+
+  async function refreshAllSources() {
+    setRefreshing(true)
+    setRefreshResult(null)
+    try {
+      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) setRefreshResult(data.summary)
+    } catch {}
+    setRefreshing(false)
+  }
+
+  async function testFetch(sourceId: number) {
+    setFetching(sourceId)
+    try {
+      const res = await fetch(`/api/cron/fetch-news?source=${sourceId}`, {
+        headers: { authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET ?? ''}` },
+      })
+      await res.json()
+    } catch {}
+    setFetching(null)
+  }
+
+  if (loading) return <div className="p-8 text-gray-400">Chargement…</div>
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Gestion des sources</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{sources.length} source(s) configurée(s)</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={refreshAllSources}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+            {refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+          >
+            <Plus className="size-4" />
+            Ajouter
+          </button>
+        </div>
+      </div>
+
+      {/* Refresh result banner */}
+      {refreshResult && (
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-6 text-sm text-green-800">
+          <span>
+            ✅ {refreshResult.sources} source(s) — {refreshResult.fetched} article(s) récupéré(s),{' '}
+            <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.skipped} ignoré(s)
+            {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
+          </span>
+          <button onClick={() => setRefreshResult(null)} className="ml-4 text-green-600 hover:text-green-800">✕</button>
+        </div>
+      )}
+
+      {/* Add form */}
+      {showForm && (
+        <form onSubmit={addSource} className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 space-y-4">
+          <h2 className="font-semibold text-gray-900">Nouvelle source</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Ville</label>
+              <select required value={form.city_id} onChange={e => setForm(f => ({ ...f, city_id: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Choisir…</option>
+                {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+              <select required value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Choisir…</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+              <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Mairie — Actualités" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+              <input required type="url" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="https://…" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as 'rss' | 'scraping' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="rss">RSS</option>
+                <option value="scraping">Scraping</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 pt-4">
+              <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+              <label htmlFor="active" className="text-sm text-gray-700">Activer immédiatement</label>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="submit" className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700">
+              Enregistrer
+            </button>
+            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border border-gray-200 text-sm rounded-lg hover:bg-gray-50">
+              Annuler
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Sources table */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Nom</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Catégorie</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Type</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Statut</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {sources.map((source) => (
+              <tr key={source.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="font-medium text-gray-900">{source.name}</div>
+                  <div className="text-xs text-gray-400 truncate max-w-xs">{source.url}</div>
+                </td>
+                <td className="px-4 py-3 hidden sm:table-cell text-gray-600">
+                  {(source.category as Category | undefined)?.name ?? '—'}
+                </td>
+                <td className="px-4 py-3 hidden md:table-cell">
+                  <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
+                    source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
+                    {source.type.toUpperCase()}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button onClick={() => toggleActive(source)} title="Activer / désactiver">
+                    {source.active
+                      ? <CheckCircle className="size-5 text-brand-500" />
+                      : <XCircle className="size-5 text-gray-300" />}
+                  </button>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1 justify-end">
+                    <button
+                      onClick={() => testFetch(source.id)}
+                      disabled={fetching === source.id}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors"
+                      title="Tester le fetch"
+                    >
+                      <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
+                    </button>
+                    <button
+                      onClick={() => deleteSource(source.id)}
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {sources.length === 0 && (
+          <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
+        )}
+      </div>
+    </div>
+  )
+}
