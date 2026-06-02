@@ -28,7 +28,6 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
     .eq('active', true)
 
   if (citySlug) {
-    // Filter by city via join
     const { data: city } = await supabase.from('cities').select('id').eq('slug', citySlug).single()
     if (city) query = query.eq('city_id', city.id)
   }
@@ -40,15 +39,28 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
   }
 
   const results: FetchResult[] = []
-
   for (const source of sources as Source[]) {
     const result = await fetchSource(source)
     results.push(result)
-    // Small delay to avoid hammering servers
     await sleep(500)
   }
-
   return results
+}
+
+export async function fetchSourceById(sourceId: number): Promise<FetchResult[]> {
+  const supabase = getServiceClient()
+  const { data: source, error } = await supabase
+    .from('sources')
+    .select('*, city:cities(id,slug), category:categories(id,slug)')
+    .eq('id', sourceId)
+    .single()
+
+  if (error || !source) {
+    console.error('[Orchestrator] Source introuvable:', sourceId, error)
+    return []
+  }
+
+  return [await fetchSource(source as Source)]
 }
 
 async function fetchSource(source: Source): Promise<FetchResult> {
@@ -85,7 +97,6 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     })
 
     if (error) {
-      // Unique constraint on url = duplicate
       if (error.code === '23505') {
         result.skipped++
       } else {

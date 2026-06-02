@@ -2,9 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
-import type { Source, Category, City } from '@/lib/types'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
+  list_selector: '',
+  title_selector: '',
+  link_selector: 'a',
+  content_selector: '',
+  image_selector: '',
+  date_selector: '',
+  base_url: '',
+}
 
 export default function AdminSourcesPage() {
   const [sources, setSources]       = useState<Source[]>([])
@@ -13,10 +23,12 @@ export default function AdminSourcesPage() {
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
   const [fetching, setFetching]     = useState<number | null>(null)
+  const [fetchResult, setFetchResult] = useState<Record<number, string>>({})
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<{
     sources: number; fetched: number; inserted: number; skipped: number; errors: number
   } | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   // Form state
   const [form, setForm] = useState({
@@ -27,6 +39,7 @@ export default function AdminSourcesPage() {
     type: 'rss' as 'rss' | 'scraping',
     active: true,
   })
+  const [scrapingConfig, setScrapingConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
 
   useEffect(() => {
     async function load() {
@@ -60,6 +73,7 @@ export default function AdminSourcesPage() {
   async function addSource(e: React.FormEvent) {
     e.preventDefault()
     const supabase = createClient()
+    const config = form.type === 'scraping' ? buildScrapingConfig(scrapingConfig) : null
     const { data, error } = await supabase
       .from('sources')
       .insert({
@@ -69,6 +83,7 @@ export default function AdminSourcesPage() {
         url: form.url,
         type: form.type,
         active: form.active,
+        scraping_config: config,
       })
       .select('*, city:cities(id,name), category:categories(id,name,slug)')
       .single()
@@ -76,28 +91,51 @@ export default function AdminSourcesPage() {
       setSources(prev => [...prev, data])
       setShowForm(false)
       setForm({ city_id: '', category_id: '', name: '', url: '', type: 'rss', active: true })
+      setScrapingConfig(EMPTY_SCRAPING_CONFIG)
     }
   }
 
   async function refreshAllSources() {
     setRefreshing(true)
     setRefreshResult(null)
+    setRefreshError(null)
     try {
       const res = await fetch('/api/admin/refresh', { method: 'POST' })
       const data = await res.json()
-      if (data.ok) setRefreshResult(data.summary)
-    } catch {}
+      if (res.status === 401) {
+        setRefreshError('Vous devez être connecté pour rafraîchir les sources.')
+      } else if (data.ok) {
+        setRefreshResult(data.summary)
+      } else {
+        setRefreshError(data.error ?? 'Erreur inconnue')
+      }
+    } catch {
+      setRefreshError('Erreur réseau')
+    }
     setRefreshing(false)
   }
 
   async function testFetch(sourceId: number) {
     setFetching(sourceId)
+    setFetchResult(prev => ({ ...prev, [sourceId]: '' }))
     try {
-      const res = await fetch(`/api/cron/fetch-news?source=${sourceId}`, {
-        headers: { authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET ?? ''}` },
+      const res = await fetch('/api/admin/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId }),
       })
-      await res.json()
-    } catch {}
+      const data = await res.json()
+      if (res.status === 401) {
+        setFetchResult(prev => ({ ...prev, [sourceId]: '🔒 Non connecté' }))
+      } else if (data.ok) {
+        const s = data.summary
+        setFetchResult(prev => ({ ...prev, [sourceId]: `✅ ${s.fetched} récupérés, ${s.inserted} ajoutés` }))
+      } else {
+        setFetchResult(prev => ({ ...prev, [sourceId]: `❌ ${data.error ?? 'Erreur'}` }))
+      }
+    } catch {
+      setFetchResult(prev => ({ ...prev, [sourceId]: '❌ Erreur réseau' }))
+    }
     setFetching(null)
   }
 
@@ -128,6 +166,14 @@ export default function AdminSourcesPage() {
           </button>
         </div>
       </div>
+
+      {/* Refresh error */}
+      {refreshError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6 text-sm text-red-800">
+          <span>❌ {refreshError}</span>
+          <button onClick={() => setRefreshError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
+        </div>
+      )}
 
       {/* Refresh result banner */}
       {refreshResult && (
@@ -185,6 +231,58 @@ export default function AdminSourcesPage() {
               <label htmlFor="active" className="text-sm text-gray-700">Activer immédiatement</label>
             </div>
           </div>
+
+          {/* Scraping config — shown only for scraping type */}
+          {form.type === 'scraping' && (
+            <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Configuration scraping (sélecteurs CSS)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur liste <span className="text-red-500">*</span></label>
+                  <input required value={scrapingConfig.list_selector}
+                    onChange={e => setScrapingConfig(c => ({ ...c, list_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="article, .news-item" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur titre <span className="text-red-500">*</span></label>
+                  <input required value={scrapingConfig.title_selector}
+                    onChange={e => setScrapingConfig(c => ({ ...c, title_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="h2, h3, .title" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur lien</label>
+                  <input value={scrapingConfig.link_selector}
+                    onChange={e => setScrapingConfig(c => ({ ...c, link_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="a" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur contenu</label>
+                  <input value={scrapingConfig.content_selector ?? ''}
+                    onChange={e => setScrapingConfig(c => ({ ...c, content_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="p, .summary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur image</label>
+                  <input value={scrapingConfig.image_selector ?? ''}
+                    onChange={e => setScrapingConfig(c => ({ ...c, image_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="img" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date</label>
+                  <input value={scrapingConfig.date_selector ?? ''}
+                    onChange={e => setScrapingConfig(c => ({ ...c, date_selector: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="time, .date" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
+                  <input value={scrapingConfig.base_url ?? ''}
+                    onChange={e => setScrapingConfig(c => ({ ...c, base_url: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="https://exemple.fr" />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 pt-2">
             <button type="submit" className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700">
               Enregistrer
@@ -212,8 +310,18 @@ export default function AdminSourcesPage() {
             {sources.map((source) => (
               <tr key={source.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">{source.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-gray-900">{source.name}</span>
+                    {source.type === 'scraping' && !source.scraping_config && (
+                      <span title="Config scraping manquante">
+                        <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-gray-400 truncate max-w-xs">{source.url}</div>
+                  {fetchResult[source.id] && (
+                    <div className="text-xs mt-0.5 text-gray-500">{fetchResult[source.id]}</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 hidden sm:table-cell text-gray-600">
                   {(source.category as Category | undefined)?.name ?? '—'}
@@ -260,4 +368,17 @@ export default function AdminSourcesPage() {
       </div>
     </div>
   )
+}
+
+function buildScrapingConfig(c: ScrapingConfig): ScrapingConfig {
+  const config: ScrapingConfig = {
+    list_selector: c.list_selector,
+    title_selector: c.title_selector,
+    link_selector: c.link_selector || 'a',
+  }
+  if (c.content_selector) config.content_selector = c.content_selector
+  if (c.image_selector)   config.image_selector   = c.image_selector
+  if (c.date_selector)    config.date_selector     = c.date_selector
+  if (c.base_url)         config.base_url          = c.base_url
+  return config
 }

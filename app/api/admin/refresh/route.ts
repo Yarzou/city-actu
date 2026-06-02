@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { fetchAllSources } from '@/lib/fetchers'
+import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -13,8 +13,16 @@ export async function POST() {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
   }
 
+  let sourceId: number | undefined
   try {
-    const results = await fetchAllSources()
+    const body = await request.json().catch(() => ({}))
+    if (body.sourceId) sourceId = Number(body.sourceId)
+  } catch {}
+
+  try {
+    const results = sourceId
+      ? await fetchSourceById(sourceId)
+      : await fetchAllSources()
 
     const summary = results.reduce(
       (acc, r) => ({
