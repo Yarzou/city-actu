@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2 } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -41,6 +41,16 @@ export default function AdminSourcesPage() {
   const [editingConfig, setEditingConfig] = useState<number | null>(null)
   const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
   const [savingConfig, setSavingConfig] = useState(false)
+
+  // Inline source editor (name + url)
+  const [editingSource, setEditingSource]     = useState<number | null>(null)
+  const [editSourceData, setEditSourceData]   = useState({ name: '', url: '' })
+  const [savingSource, setSavingSource]       = useState(false)
+
+  // Scraping auto-detect
+  const [detecting, setDetecting]           = useState(false)
+  const [detectError, setDetectError]       = useState<string | null>(null)
+  const [detectPreview, setDetectPreview]   = useState<{ matchedCount: number; sampleTitles: string[] } | null>(null)
 
   // Form state
   const [form, setForm] = useState({
@@ -108,6 +118,7 @@ export default function AdminSourcesPage() {
   }
 
   function openEditConfig(source: Source) {
+    setEditingSource(null)
     const cfg = source.scraping_config ?? EMPTY_SCRAPING_CONFIG
     setEditConfig({
       list_selector: cfg.list_selector ?? '',
@@ -134,6 +145,52 @@ export default function AdminSourcesPage() {
       setEditingConfig(null)
     }
     setSavingConfig(false)
+  }
+
+  function openEditSource(source: Source) {
+    setEditingConfig(null)
+    setEditSourceData({ name: source.name, url: source.url })
+    setEditingSource(editingSource === source.id ? null : source.id)
+  }
+
+  async function saveEditSource(source: Source) {
+    setSavingSource(true)
+    const supabase = createClient()
+    const urlChanged = editSourceData.url !== source.url
+    const update: Record<string, unknown> = { name: editSourceData.name, url: editSourceData.url }
+    if (urlChanged && source.type === 'scraping') update.scraping_config = null
+    const { error } = await supabase.from('sources').update(update).eq('id', source.id)
+    if (!error) {
+      setSources(prev => prev.map(s => s.id === source.id
+        ? { ...s, name: editSourceData.name, url: editSourceData.url, scraping_config: (urlChanged && s.type === 'scraping') ? null : s.scraping_config }
+        : s))
+      setEditingSource(null)
+    }
+    setSavingSource(false)
+  }
+
+  async function detectScrapingConfig(url: string) {
+    if (!url) return
+    setDetecting(true)
+    setDetectError(null)
+    setDetectPreview(null)
+    try {
+      const res = await fetch('/api/admin/detect-scraping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        setDetectError(data.error ?? 'Détection échouée')
+      } else {
+        setScrapingConfig(data.config)
+        setDetectPreview({ matchedCount: data.matchedCount, sampleTitles: data.sampleTitles })
+      }
+    } catch {
+      setDetectError('Erreur réseau')
+    }
+    setDetecting(false)
   }
 
   async function refreshAllSources() {
@@ -262,8 +319,22 @@ export default function AdminSourcesPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
-              <input required type="url" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="https://…" />
+              <div className="flex gap-2">
+                <input required type="url" value={form.url} onChange={e => { setForm(f => ({ ...f, url: e.target.value })); setDetectPreview(null); setDetectError(null) }}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="https://…" />
+                {form.type === 'scraping' && (
+                  <button
+                    type="button"
+                    onClick={() => detectScrapingConfig(form.url)}
+                    disabled={detecting || !form.url}
+                    title="Détecter automatiquement les sélecteurs CSS"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-300 bg-orange-50 text-orange-700 text-xs font-medium hover:bg-orange-100 disabled:opacity-40 transition-colors shrink-0"
+                  >
+                    <Wand2 className={cn('size-3.5', detecting && 'animate-pulse')} />
+                    {detecting ? 'Détection…' : 'Détecter'}
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
@@ -280,7 +351,22 @@ export default function AdminSourcesPage() {
           </div>
 
           {form.type === 'scraping' && (
-            <ScrapingConfigFields config={scrapingConfig} onChange={setScrapingConfig} required />
+            <>
+              {detectError && (
+                <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  ❌ {detectError}
+                </div>
+              )}
+              {detectPreview && (
+                <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2 space-y-1">
+                  <p className="font-medium text-green-800">✅ {detectPreview.matchedCount} élément(s) détecté(s) — aperçu :</p>
+                  <ul className="list-disc list-inside text-green-700 space-y-0.5">
+                    {detectPreview.sampleTitles.map((t, i) => <li key={i} className="truncate">{t}</li>)}
+                  </ul>
+                </div>
+              )}
+              <ScrapingConfigFields config={scrapingConfig} onChange={setScrapingConfig} required />
+            </>
           )}
 
           <div className="flex gap-2 pt-2">
@@ -358,6 +444,14 @@ export default function AdminSourcesPage() {
                         >
                           <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
                         </button>
+                        <button
+                          onClick={() => openEditSource(source)}
+                          className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
+                            editingSource === source.id && 'text-brand-600 bg-brand-50')}
+                          title="Éditer nom / URL"
+                        >
+                          <Pencil className="size-4" />
+                        </button>
                         {source.type === 'scraping' && (
                           <button
                             onClick={() => openEditConfig(source)}
@@ -378,6 +472,57 @@ export default function AdminSourcesPage() {
                       </div>
                     </td>
                   </tr>
+                  {/* Inline source editor (name + URL) */}
+                  {editingSource === source.id && (
+                    <tr key={`${source.id}-edit`}>
+                      <td colSpan={5} className="px-4 pb-4 pt-0">
+                        <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
+                          <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">
+                            Éditer — {source.name}
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                              <input
+                                value={editSourceData.name}
+                                onChange={e => setEditSourceData(d => ({ ...d, name: e.target.value }))}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                              <input
+                                type="url"
+                                value={editSourceData.url}
+                                onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                              />
+                            </div>
+                          </div>
+                          {source.type === 'scraping' && editSourceData.url !== source.url && (
+                            <p className="text-xs text-orange-700 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
+                              ⚠️ L&apos;URL a changé — la configuration scraping sera réinitialisée. Pensez à la reconfigurer via ⚙️.
+                            </p>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => saveEditSource(source)}
+                              disabled={savingSource}
+                              className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50"
+                            >
+                              {savingSource ? 'Enregistrement…' : 'Enregistrer'}
+                            </button>
+                            <button
+                              onClick={() => setEditingSource(null)}
+                              className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {/* Inline scraping config editor */}
                   {source.type === 'scraping' && editingConfig === source.id && (
                     <tr key={`${source.id}-config`}>

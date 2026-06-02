@@ -51,7 +51,7 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
 
       const content = contentEl?.text().trim().slice(0, 500) ?? null
       const image = imageEl?.attr('src') ?? imageEl?.attr('data-src') ?? null
-      const dateText = dateEl?.text().trim() ?? null
+      const dateText = dateEl?.attr('content') ?? dateEl?.text().trim() ?? null
       const published_at = dateText ? parseFrenchDate(dateText) : null
 
       items.push({ title, url, content_preview: content, image_url: image, published_at })
