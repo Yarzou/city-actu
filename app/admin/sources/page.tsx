@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2 } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, ChevronLeft } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -249,6 +250,10 @@ export default function AdminSourcesPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
+          <Link href="/profil" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-brand-600 transition-colors mb-1">
+            <ChevronLeft className="size-3.5" />
+            Mon profil
+          </Link>
           <h1 className="text-2xl font-bold text-gray-900">Gestion des sources</h1>
           <p className="text-sm text-gray-500 mt-0.5">{sources.length} source(s) configurée(s)</p>
         </div>
