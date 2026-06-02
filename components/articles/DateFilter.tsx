@@ -65,18 +65,16 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Pill: Tout */}
-      <button
-        onClick={() => onChange(null)}
-        className={cn(
-          'px-3 py-1.5 rounded-full text-sm border transition-colors',
-          !value
-            ? 'bg-brand-600 text-white border-brand-600'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-        )}
-      >
-        Tout
-      </button>
+      {/* × clear button — only when a filter is active */}
+      {value && (
+        <button
+          onClick={() => onChange(null)}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors"
+        >
+          <span>×</span>
+          {value.label}
+        </button>
+      )}
 
       {PILLS.map((label) => (
         <button
@@ -93,20 +91,18 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
         </button>
       ))}
 
-      {/* Custom date button */}
+      {/* Custom date button — mobile only (calendar handles this on desktop) */}
       <button
         onClick={() => dateInputRef.current?.showPicker?.()}
         className={cn(
-          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors',
+          'sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors',
           value && !PILLS.includes(value.label as typeof PILLS[number])
             ? 'bg-brand-600 text-white border-brand-600'
             : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
         )}
       >
         <CalendarDays className="size-3.5" />
-        {value && !PILLS.includes(value.label as typeof PILLS[number])
-          ? value.label
-          : 'Date…'}
+        Date…
       </button>
       <input
         ref={dateInputRef}

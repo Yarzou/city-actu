@@ -80,26 +80,27 @@ export function MiniCalendar({ selected, onChange, activeDates = [], onMonthChan
           const isTod    = isToday(day)
 
           return (
-            <button
-              key={key}
-              onClick={() => onChange(day)}
-              disabled={!inMonth}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-8 h-8 mx-auto rounded-full text-xs transition-colors',
-                !inMonth && 'text-gray-200 cursor-default',
-                inMonth && !isSel && !isTod && 'text-gray-700 hover:bg-brand-50',
-                isTod && !isSel && 'ring-1 ring-brand-400 text-brand-600 font-semibold',
-                isSel && 'bg-brand-600 text-white font-semibold',
-              )}
-            >
-              {format(day, 'd')}
-              {isActive && inMonth && (
-                <span className={cn(
-                  'absolute bottom-0.5 size-1 rounded-full',
-                  isSel ? 'bg-white/70' : 'bg-brand-400'
-                )} />
-              )}
-            </button>
+            <div key={key} className="flex items-center justify-center">
+              <button
+                onClick={() => onChange(day)}
+                disabled={!inMonth}
+                className={cn(
+                  'relative flex flex-col items-center justify-center w-7 h-7 rounded-full text-xs transition-colors',
+                  !inMonth && 'text-gray-200 cursor-default',
+                  inMonth && !isSel && !isTod && 'text-gray-700 hover:bg-brand-50',
+                  isTod && !isSel && 'ring-1 ring-brand-400 text-brand-600 font-semibold',
+                  isSel && 'bg-brand-600 text-white font-semibold',
+                )}
+              >
+                {format(day, 'd')}
+                {isActive && inMonth && (
+                  <span className={cn(
+                    'absolute bottom-0.5 size-1 rounded-full',
+                    isSel ? 'bg-white/70' : 'bg-brand-400'
+                  )} />
+                )}
+              </button>
+            </div>
           )
         })}
       </div>
