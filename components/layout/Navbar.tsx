@@ -10,9 +10,6 @@ import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
   { href: '/la-chapelle-sur-erdre', label: 'La Chapelle-sur-Erdre' },
-  { href: '/la-chapelle-sur-erdre/infos-pratiques', label: 'Infos pratiques' },
-  { href: '/la-chapelle-sur-erdre/sorties-enfants', label: 'Sorties enfants' },
-  { href: '/la-chapelle-sur-erdre/agenda', label: 'Agenda' },
 ]
 
 export function Navbar() {

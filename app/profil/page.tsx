@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from '@/components/articles/ArticleCard'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
-import { LogOut, Bell, Heart } from 'lucide-react'
+import { LogOut, Bell, Heart, Settings } from 'lucide-react'
 import type { Article as ArticleType, Category as CategoryType, City as CityType, UserAlert } from '@/lib/types'
 import { CATEGORY_ICONS } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -99,13 +100,22 @@ export default function ProfilPage() {
           <h1 className="text-2xl font-bold text-gray-900">Mon profil</h1>
           {email && <p className="text-sm text-gray-500 mt-0.5">{email}</p>}
         </div>
-        <button
-          onClick={signOut}
-          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-        >
-          <LogOut className="size-4" />
-          Déconnexion
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/sources"
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-700 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <Settings className="size-4" />
+            Admin
+          </Link>
+          <button
+            onClick={signOut}
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <LogOut className="size-4" />
+            Déconnexion
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
