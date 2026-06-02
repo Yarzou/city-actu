@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2 } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -313,51 +313,56 @@ export default function AdminSourcesPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
-              <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Mairie — Actualités" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
-              <div className="flex gap-2">
-                <input required type="url" value={form.url} onChange={e => { setForm(f => ({ ...f, url: e.target.value })); setDetectPreview(null); setDetectError(null) }}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="https://…" />
-                {form.type === 'scraping' && (
-                  <button
-                    type="button"
-                    onClick={() => detectScrapingConfig(form.url)}
-                    disabled={detecting || !form.url}
-                    title="Détecter automatiquement les sélecteurs CSS"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-300 bg-orange-50 text-orange-700 text-xs font-medium hover:bg-orange-100 disabled:opacity-40 transition-colors shrink-0"
-                  >
-                    <Wand2 className={cn('size-3.5', detecting && 'animate-pulse')} />
-                    {detecting ? 'Détection…' : 'Détecter'}
-                  </button>
-                )}
-              </div>
-            </div>
-            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as 'rss' | 'scraping' }))}
+              <select value={form.type} onChange={e => {
+                setForm(f => ({ ...f, type: e.target.value as 'rss' | 'scraping' }))
+                setDetectPreview(null)
+                setDetectError(null)
+                setScrapingConfig(EMPTY_SCRAPING_CONFIG)
+              }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="rss">RSS</option>
                 <option value="scraping">Scraping</option>
               </select>
             </div>
-            <div className="flex items-center gap-2 pt-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+              <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Mairie — Actualités" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+              <input
+                required
+                type="url"
+                value={form.url}
+                onChange={e => { setForm(f => ({ ...f, url: e.target.value })); setDetectPreview(null); setDetectError(null) }}
+                onBlur={e => { if (form.type === 'scraping' && e.target.value) detectScrapingConfig(e.target.value) }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="https://…"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
               <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
               <label htmlFor="active" className="text-sm text-gray-700">Activer immédiatement</label>
             </div>
           </div>
 
+          {/* Auto-detect status */}
           {form.type === 'scraping' && (
-            <>
-              {detectError && (
-                <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  ❌ {detectError}
+            <div>
+              {detecting && (
+                <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <RefreshCw className="size-3.5 animate-spin shrink-0" />
+                  Analyse de la page en cours…
                 </div>
               )}
-              {detectPreview && (
+              {!detecting && detectError && (
+                <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                  ⚠️ {detectError} — vous pourrez configurer les sélecteurs manuellement via ⚙️ après l&apos;ajout.
+                </div>
+              )}
+              {!detecting && detectPreview && (
                 <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2 space-y-1">
                   <p className="font-medium text-green-800">✅ {detectPreview.matchedCount} élément(s) détecté(s) — aperçu :</p>
                   <ul className="list-disc list-inside text-green-700 space-y-0.5">
@@ -365,8 +370,10 @@ export default function AdminSourcesPage() {
                   </ul>
                 </div>
               )}
-              <ScrapingConfigFields config={scrapingConfig} onChange={setScrapingConfig} required />
-            </>
+              {!detecting && !detectError && !detectPreview && form.url && (
+                <p className="text-xs text-gray-400">Les sélecteurs CSS seront détectés automatiquement dès que vous quittez le champ URL.</p>
+              )}
+            </div>
           )}
 
           <div className="flex gap-2 pt-2">
