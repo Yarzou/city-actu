@@ -1,0 +1,26 @@
+{
+  "name": "Ville Actu — La Chapelle-sur-Erdre",
+  "short_name": "Ville Actu",
+  "description": "Actualités locales agrégées pour La Chapelle-sur-Erdre",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#16a34a",
+  "lang": "fr",
+  "orientation": "portrait-primary",
+  "categories": ["news", "local"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

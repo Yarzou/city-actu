@@ -9,26 +9,28 @@
  *   node scripts/db-migrate.js rollback <tag>  → rollback jusqu'au tag donné
  *   node scripts/db-migrate.js tag <nom>       → pose un tag (point de rollback)
  *   node scripts/db-migrate.js validate        → valide les fichiers changelog
- *
- * Prérequis : copier liquibase/liquibase.properties.example → liquibase/liquibase.properties
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const { Liquibase } = require('liquibase')
+const { Liquibase, LiquibaseConfig } = require('liquibase')
 const path = require('path')
-const fs = require('fs')
-/* eslint-enable @typescript-eslint/no-require-imports */
 
-const propsFile = path.resolve(__dirname, '../liquibase/liquibase.properties')
-if (!fs.existsSync(propsFile)) {
-  console.error('\n❌  Fichier manquant : liquibase/liquibase.properties')
-  console.error('    Copiez liquibase.properties.example et remplissez les valeurs.\n')
+// Vérification de la variable de mot de passe
+const dbPassword = 'uR3gbuJSp/8ed$z'
+if (!dbPassword) {
+  console.error('\n❌  Variable SUPABASE_DB_PASSWORD manquante.')
+  console.error('    Ajoutez-la dans .env.local ou exportez-la dans votre shell :\n')
+  console.error('    export SUPABASE_DB_PASSWORD="votre-mot-de-passe"\n')
   process.exit(1)
 }
-
+//6543
+/** @type {LiquibaseConfig} */
 const config = {
+  url: 'jdbc:postgresql://aws-1-eu-central-1.pooler.supabase.com:5432/postgres',
+  username: 'postgres.giwpesnzwtcobfffpwnh',
+  password: dbPassword,
   changeLogFile: 'liquibase/changelog/db.changelog-master.xml',
-  liquibasePropertiesFile: propsFile,
+  liquibasePropertiesFile: path.resolve(__dirname, '../liquibase/liquibase.properties'),
+  // Désactive la télémétrie Liquibase
 }
 
 const instance = new Liquibase(config)

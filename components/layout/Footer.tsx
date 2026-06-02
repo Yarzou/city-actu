@@ -12,7 +12,6 @@ export function Footer() {
         </div>
         <nav className="flex items-center gap-4">
           <Link href="/a-propos" className="hover:text-gray-900 transition-colors">À propos</Link>
-          <Link href="/admin/sources" className="hover:text-gray-900 transition-colors">Admin</Link>
         </nav>
         <p>© {new Date().getFullYear()} Ville Actu</p>
       </div>
