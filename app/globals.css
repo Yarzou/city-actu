@@ -27,9 +27,34 @@
 :root {
   --background: #f9fafb;
   --foreground: #111827;
+  /* Safe area insets (iPhone notch / home indicator) */
+  --sat: env(safe-area-inset-top);
+  --sar: env(safe-area-inset-right);
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  /* Extend background into safe areas */
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+
+/* Safe-area bottom padding utility (home indicator on iPhone) */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Minimum tap target size for accessibility */
+button, a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Override for inline/text links that shouldn't be 44px tall */
+p a, .inline-link {
+  min-height: unset;
+  min-width: unset;
 }
