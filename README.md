@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ville Actu 📰
 
-## Getting Started
+Agrégateur d'actualités locales pour **La Chapelle-sur-Erdre** (extensible à d'autres villes).
 
-First, run the development server:
+Collecte automatiquement les actus via **RSS feeds** et **scraping web**, les catégorise, et les affiche dans un feed moderne. Les utilisateurs connectés peuvent sauvegarder des **favoris** et configurer des **alertes** par catégorie.
+
+## Stack
+
+- **Next.js 16** App Router (TypeScript)
+- **Supabase** (Auth + PostgreSQL)
+- **Tailwind CSS v4**
+- **rss-parser** + **cheerio** pour l'agrégation
+- **Liquibase** pour les migrations
+- **Vercel Cron** pour le fetch automatique (toutes les heures)
+
+## Installation
 
 ```bash
+npm install
+
+# Copier et remplir les variables d'environnement
+cp .env.local.example .env.local
+
+# Configurer Liquibase
+cp liquibase/liquibase.properties.example liquibase/liquibase.properties
+# Renseigner url, username, password (Supabase > Settings > Database)
+
+# Appliquer les migrations
+npm run db:migrate
+
+# Démarrer le serveur de développement
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev          # Serveur de développement (http://localhost:3000)
+npm run build        # Build de production
+npm run lint         # ESLint
+npm run db:migrate   # Appliquer les migrations
+npm run db:status    # État des changelogs
+npm run db:rollback  # Rollback au dernier tag
+npm run db:tag       # Poser un tag
+npm run db:validate  # Valider les fichiers changelog
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Structure des dossiers
 
-## Learn More
+```
+app/
+  page.tsx                       # Homepage
+  [citySlug]/page.tsx            # Feed d'une ville
+  [citySlug]/[categorySlug]/     # Feed filtré par catégorie
+  article/[id]/                  # Détail article
+  auth/login|signup/             # Authentification Supabase
+  profil/                        # Favoris + alertes utilisateur
+  admin/sources/                 # CRUD sources (admin)
+  api/cron/fetch-news/           # Endpoint cron Vercel
 
-To learn more about Next.js, take a look at the following resources:
+lib/
+  fetchers/rss.ts                # Parser RSS
+  fetchers/scraper.ts            # Scraping web (cheerio)
+  fetchers/index.ts              # Orchestrateur + déduplication
+  supabase/client.ts             # Client navigateur
+  supabase/server.ts             # Client serveur
+  types.ts                       # Types partagés
+  utils.ts                       # Utilitaires
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+components/
+  layout/                        # Navbar, Footer
+  articles/                      # ArticleCard, ArticleFeed, FavoriteButton, SkeletonCard
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+liquibase/changelog/
+  001-initial-schema.sql         # Tables + RLS
+  002-seed-data.sql              # Ville + catégories
+  003-seed-sources.sql           # Sources initiales
+```
 
-## Deploy on Vercel
+## Catégories
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Slug | Nom | Icône |
+|------|-----|-------|
+| `infos-pratiques` | Infos pratiques | 🏛️ |
+| `sorties-enfants` | Sorties enfants | 🎠 |
+| `agenda` | Agenda | 📅 |
+| `sports` | Sports | ⚽ |
+| `travaux` | Travaux | 🚧 |
+| `emploi` | Emploi | 💼 |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Ajouter une source
+
+Via `/admin/sources` ou en SQL :
+```sql
+-- Source RSS
+INSERT INTO sources (city_id, category_id, name, url, type, active)
+VALUES (1, 1, 'Mairie — RSS', 'https://...', 'rss', true);
+
+-- Source scraping
+INSERT INTO sources (city_id, category_id, name, url, type, active, scraping_config)
+VALUES (1, 2, 'Agenda local', 'https://...', 'scraping', true,
+  '{"list_selector":"article","title_selector":"h2","link_selector":"a","base_url":"https://..."}'::jsonb);
+```
+
+## Variables d'environnement
+
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL du projet Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé anon publique |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clé service role (cron) |
+| `CRON_SECRET` | Secret pour sécuriser `/api/cron/fetch-news` |
+

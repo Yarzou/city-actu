@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+  <!-- Schéma initial : profiles, cities, categories, sources, articles, favorites, alerts + RLS -->
+  <include file="liquibase/changelog/001-initial-schema.sql"/>
+
+  <!-- Données seed : ville La Chapelle-sur-Erdre + catégories -->
+  <include file="liquibase/changelog/002-seed-data.sql"/>
+
+  <!-- Sources initiales (RSS + scraping) -->
+  <include file="liquibase/changelog/003-seed-sources.sql"/>
+
+</databaseChangeLog>

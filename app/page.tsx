@@ -1,65 +1,104 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { ArticleCard } from '@/components/articles/ArticleCard'
+import { SkeletonCard } from '@/components/articles/SkeletonCard'
+import { CATEGORY_ICONS } from '@/lib/types'
+import type { Article as ArticleType, Category as CategoryType } from '@/lib/types'
+
+const DEFAULT_CITY_SLUG = 'la-chapelle-sur-erdre'
+
+export default function HomePage() {
+  const [articles, setArticles]     = useState<ArticleType[]>([])
+  const [categories, setCategories] = useState<CategoryType[]>([])
+  const [userId, setUserId]         = useState<string | null>(null)
+  const [favorites, setFavorites]   = useState<Set<number>>(new Set())
+  const [loading, setLoading]       = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUserId(user?.id ?? null)
+
+      const { data: cats } = await supabase.from('categories').select('*').order('name')
+      setCategories(cats ?? [])
+
+      const { data: arts } = await supabase
+        .from('articles')
+        .select('*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug)')
+        .eq('is_duplicate', false)
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('fetched_at', { ascending: false })
+        .limit(24)
+
+      setArticles(arts ?? [])
+
+      if (user) {
+        const { data: favs } = await supabase
+          .from('user_favorites')
+          .select('article_id')
+          .eq('user_id', user.id)
+        setFavorites(new Set((favs ?? []).map((f: { article_id: number }) => f.article_id)))
+      }
+
+      setLoading(false)
+    }
+
+    load()
+  }, [])
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          La Chapelle-sur-Erdre
+        </h1>
+        <p className="text-gray-500">
+          Toutes les actualités locales agrégées : infos pratiques, sorties, agenda, sports…
+        </p>
+      </div>
+
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-8">
+          {categories.map((cat) => (
+            <Link
+              key={cat.id}
+              href={`/${DEFAULT_CITY_SLUG}/${cat.slug}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:border-brand-400 hover:bg-brand-50 transition-colors text-sm text-gray-700"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              <span>{CATEGORY_ICONS[cat.slug] ?? '📰'}</span>
+              {cat.name}
+            </Link>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+      )}
+
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : articles.length === 0 ? (
+        <div className="text-center py-20 text-gray-400">
+          <p className="text-4xl mb-4">📰</p>
+          <p className="font-medium text-gray-600">Aucun article pour le moment</p>
+          <p className="text-sm mt-1">Les actualités seront disponibles après le premier fetch automatique.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {articles.map((article) => (
+            <ArticleCard
+              key={article.id}
+              article={article}
+              userId={userId}
+              isFavorited={favorites.has(article.id)}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          ))}
         </div>
-      </main>
+      )}
     </div>
-  );
+  )
 }

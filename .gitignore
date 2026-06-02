@@ -1,3 +1,6 @@
+# Liquibase — fichier local avec credentials (ne jamais committer)
+liquibase/liquibase.properties
+
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
