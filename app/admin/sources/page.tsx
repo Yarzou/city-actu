@@ -247,7 +247,7 @@ export default function AdminSourcesPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestion des sources</h1>
           <p className="text-sm text-gray-500 mt-0.5">{sources.length} source(s) configurée(s)</p>
@@ -256,10 +256,10 @@ export default function AdminSourcesPage() {
           <button
             onClick={refreshAllSources}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            {refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}
+            <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}</span>
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -380,8 +380,151 @@ export default function AdminSourcesPage() {
         </form>
       )}
 
-      {/* Sources table */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      {/* Sources — mobile cards (hidden on sm+) */}
+      <div className="sm:hidden space-y-3 mb-4">
+        {sources.map((source) => {
+          const result = fetchResult[source.id]
+          const hasErrors = result && result.errors.length > 0
+          return (
+            <div key={source.id} className="bg-white rounded-2xl border border-gray-200 p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-gray-900 text-sm">{source.name}</span>
+                    {source.type === 'scraping' && !source.scraping_config && (
+                      <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 truncate mt-0.5">{source.url}</p>
+                </div>
+                <button onClick={() => toggleActive(source)} title="Activer / désactiver" className="shrink-0 mt-0.5">
+                  {source.active
+                    ? <CheckCircle className="size-5 text-brand-500" />
+                    : <XCircle className="size-5 text-gray-300" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
+                  source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
+                  {source.type.toUpperCase()}
+                </span>
+                {(source.category as Category | undefined)?.name && (
+                  <span className="text-xs text-gray-500">{(source.category as Category | undefined)?.name}</span>
+                )}
+              </div>
+
+              {result && (
+                <div className={cn('text-xs', hasErrors ? 'text-red-600' : 'text-green-600')}>
+                  {hasErrors
+                    ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
+                    : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés`}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1 pt-1 border-t border-gray-100">
+                <button
+                  onClick={() => testFetch(source.id)}
+                  disabled={fetching === source.id}
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors"
+                  title="Tester le fetch"
+                >
+                  <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
+                </button>
+                <button
+                  onClick={() => openEditSource(source)}
+                  className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
+                    editingSource === source.id && 'text-brand-600 bg-brand-50')}
+                  title="Éditer nom / URL"
+                >
+                  <Pencil className="size-4" />
+                </button>
+                {source.type === 'scraping' && (
+                  <button
+                    onClick={() => openEditConfig(source)}
+                    className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
+                      editingConfig === source.id && 'text-brand-600 bg-brand-50')}
+                    title="Éditer la config scraping"
+                  >
+                    <Settings className="size-4" />
+                  </button>
+                )}
+                <button
+                  onClick={() => deleteSource(source.id)}
+                  className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                  title="Supprimer"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+
+              {/* Inline editors (mobile) */}
+              {editingSource === source.id && (
+                <div className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-3 mt-2">
+                  <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Éditer — {source.name}</p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                      <input
+                        value={editSourceData.name}
+                        onChange={e => setEditSourceData(d => ({ ...d, name: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                      <input
+                        type="url"
+                        value={editSourceData.url}
+                        onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </div>
+                  </div>
+                  {source.type === 'scraping' && editSourceData.url !== source.url && (
+                    <p className="text-xs text-orange-700 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
+                      ⚠️ L&apos;URL a changé — la configuration scraping sera réinitialisée.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={() => saveEditSource(source)} disabled={savingSource}
+                      className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                      {savingSource ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                    <button onClick={() => setEditingSource(null)}
+                      className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {source.type === 'scraping' && editingConfig === source.id && (
+                <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-3 mt-2">
+                  <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Config scraping — {source.name}</p>
+                  <ScrapingConfigFields config={editConfig} onChange={setEditConfig} required />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveEditConfig(source.id)} disabled={savingConfig}
+                      className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                      {savingConfig ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                    <button onClick={() => setEditingConfig(null)}
+                      className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {sources.length === 0 && (
+          <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
+        )}
+      </div>
+
+      {/* Sources table — desktop only (hidden on mobile) */}
+      <div className="hidden sm:block bg-white rounded-2xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>

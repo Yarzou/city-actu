@@ -2,25 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from '@/components/articles/ArticleCard'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
-import { LogOut, Bell, Heart, Settings } from 'lucide-react'
-import type { Article as ArticleType, Category as CategoryType, City as CityType, UserAlert } from '@/lib/types'
-import { CATEGORY_ICONS } from '@/lib/types'
+import { LogOut, Heart, Settings } from 'lucide-react'
+import type { Article as ArticleType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export default function ProfilPage() {
   const router = useRouter()
-  const [tab, setTab]               = useState<'favorites' | 'alerts'>('favorites')
-  const [userId, setUserId]         = useState<string | null>(null)
-  const [email, setEmail]           = useState<string | null>(null)
-  const [favorites, setFavorites]   = useState<ArticleType[]>([])
-  const [alerts, setAlerts]         = useState<UserAlert[]>([])
-  const [categories, setCategories] = useState<CategoryType[]>([])
-  const [cities, setCities]         = useState<CityType[]>([])
-  const [loading, setLoading]       = useState(true)
+  const [tab, setTab]             = useState<'favorites' | 'admin'>('favorites')
+  const [userId, setUserId]       = useState<string | null>(null)
+  const [email, setEmail]         = useState<string | null>(null)
+  const [favorites, setFavorites] = useState<ArticleType[]>([])
+  const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
     const supabase = createClient()
@@ -32,48 +27,18 @@ export default function ProfilPage() {
       setUserId(user.id)
       setEmail(user.email ?? null)
 
-      const [{ data: favs }, { data: alts }, { data: cats }, { data: cts }] = await Promise.all([
-        supabase
-          .from('user_favorites')
-          .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug))')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('user_alerts')
-          .select('*, city:cities(id,name,slug), category:categories(id,name,slug)')
-          .eq('user_id', user.id),
-        supabase.from('categories').select('*').order('name'),
-        supabase.from('cities').select('*').order('name'),
-      ])
+      const { data: favs } = await supabase
+        .from('user_favorites')
+        .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug))')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
 
       setFavorites((favs ?? []).map((f: { article: ArticleType }) => f.article).filter(Boolean))
-      setAlerts(alts ?? [])
-      setCategories(cats ?? [])
-      setCities(cts ?? [])
       setLoading(false)
     }
 
     load()
   }, [router])
-
-  async function toggleAlert(cityId: number, categoryId: number | null) {
-    if (!userId) return
-    const supabase = createClient()
-    const existing = alerts.find(
-      a => a.city_id === cityId && a.category_id === categoryId
-    )
-    if (existing) {
-      await supabase.from('user_alerts').delete().eq('id', existing.id)
-      setAlerts(prev => prev.filter(a => a.id !== existing.id))
-    } else {
-      const { data } = await supabase
-        .from('user_alerts')
-        .insert({ user_id: userId, city_id: cityId, category_id: categoryId, active: true })
-        .select('*, city:cities(id,name,slug), category:categories(id,name,slug)')
-        .single()
-      if (data) setAlerts(prev => [...prev, data])
-    }
-  }
 
   async function signOut() {
     const supabase = createClient()
@@ -100,33 +65,27 @@ export default function ProfilPage() {
           <h1 className="text-2xl font-bold text-gray-900">Mon profil</h1>
           {email && <p className="text-sm text-gray-500 mt-0.5">{email}</p>}
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin/sources"
-            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-700 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            <Settings className="size-4" />
-            Admin
-          </Link>
-          <button
-            onClick={signOut}
-            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            <LogOut className="size-4" />
-            Déconnexion
-          </button>
-        </div>
+        <button
+          onClick={signOut}
+          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+        >
+          <LogOut className="size-4" />
+          <span className="hidden sm:inline">Déconnexion</span>
+        </button>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {[
           { id: 'favorites', label: 'Favoris', icon: <Heart className="size-4" />, count: favorites.length },
-          { id: 'alerts',    label: 'Alertes',  icon: <Bell className="size-4" />,  count: alerts.filter(a => a.active).length },
+          { id: 'admin',     label: 'Admin',   icon: <Settings className="size-4" />, count: 0 },
         ].map(({ id, label, icon, count }) => (
           <button
             key={id}
-            onClick={() => setTab(id as 'favorites' | 'alerts')}
+            onClick={() => {
+              if (id === 'admin') { router.push('/admin/sources'); return }
+              setTab(id as 'favorites' | 'admin')
+            }}
             className={cn(
               'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
               tab === id
@@ -159,57 +118,7 @@ export default function ProfilPage() {
           </div>
         )
       )}
-
-      {tab === 'alerts' && (
-        <div className="space-y-6">
-          {cities.map((city) => (
-            <div key={city.id} className="bg-white rounded-2xl border border-gray-200 p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">{city.name}</h3>
-              <div className="flex flex-wrap gap-2">
-                {/* Alert for all categories */}
-                <AlertToggle
-                  active={alerts.some(a => a.city_id === city.id && a.category_id === null && a.active)}
-                  label="Toutes les catégories"
-                  icon="🔔"
-                  onToggle={() => toggleAlert(city.id, null)}
-                />
-                {categories.map((cat) => (
-                  <AlertToggle
-                    key={cat.id}
-                    active={alerts.some(a => a.city_id === city.id && a.category_id === cat.id && a.active)}
-                    label={cat.name}
-                    icon={CATEGORY_ICONS[cat.slug] ?? '📰'}
-                    onToggle={() => toggleAlert(city.id, cat.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
 
-function AlertToggle({ active, label, icon, onToggle }: {
-  active: boolean
-  label: string
-  icon: string
-  onToggle: () => void
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      className={cn(
-        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors',
-        active
-          ? 'bg-brand-50 border-brand-400 text-brand-700 font-medium'
-          : 'border-gray-200 text-gray-600 hover:border-brand-300 hover:bg-brand-50'
-      )}
-    >
-      <span>{icon}</span>
-      {label}
-      {active && <span className="text-brand-500">✓</span>}
-    </button>
-  )
-}
