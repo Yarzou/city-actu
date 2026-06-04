@@ -31,7 +31,10 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached
-      return fetch(event.request).then((response) => {
+      // iOS Safari PWA rejects redirect responses from service workers —
+      // use redirect:'follow' so we always return the final 200 response.
+      const req = new Request(event.request, { redirect: 'follow' })
+      return fetch(req).then((response) => {
         // Cache HTML pages and static assets
         if (
           response.ok &&
