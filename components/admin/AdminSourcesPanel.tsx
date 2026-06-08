@@ -49,6 +49,13 @@ export function AdminSourcesPanel() {
   // Detect for inline config editor (existing sources)
   const [detectingConfig, setDetectingConfig]   = useState(false)
   const [detectConfigError, setDetectConfigError] = useState<string | null>(null)
+  // Category management
+  const [showCategorySection, setShowCategorySection] = useState(false)
+  const [editingCategory, setEditingCategory]   = useState<number | null>(null)
+  const [editCategoryData, setEditCategoryData] = useState({ name: '', slug: '', icon: '', color: '' })
+  const [savingCategory, setSavingCategory]     = useState(false)
+  const [showCategoryForm, setShowCategoryForm] = useState(false)
+  const [newCategory, setNewCategory]           = useState({ name: '', slug: '', icon: '', color: '' })
   const [form, setForm] = useState({
     city_id: '',
     category_id: '',
@@ -164,6 +171,43 @@ export function AdminSourcesPanel() {
       setEditingSource(null)
     }
     setSavingSource(false)
+  }
+
+  function toSlug(name: string) {
+    return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  }
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault()
+    const supabase = createClient()
+    const { data, error } = await supabase.from('categories')
+      .insert({ name: newCategory.name, slug: newCategory.slug || toSlug(newCategory.name), icon: newCategory.icon, color: newCategory.color })
+      .select('*').single()
+    if (!error && data) {
+      setCategories(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+      setNewCategory({ name: '', slug: '', icon: '', color: '' })
+      setShowCategoryForm(false)
+    }
+  }
+
+  async function saveCategory(id: number) {
+    setSavingCategory(true)
+    const supabase = createClient()
+    const { error } = await supabase.from('categories')
+      .update({ name: editCategoryData.name, slug: editCategoryData.slug, icon: editCategoryData.icon, color: editCategoryData.color })
+      .eq('id', id)
+    if (!error) {
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...editCategoryData } : c))
+      setEditingCategory(null)
+    }
+    setSavingCategory(false)
+  }
+
+  async function deleteCategory(id: number) {
+    if (!confirm('Supprimer cette catégorie ? Les sources associées perdront leur catégorie.')) return
+    const supabase = createClient()
+    await supabase.from('categories').delete().eq('id', id)
+    setCategories(prev => prev.filter(c => c.id !== id))
   }
 
   async function detectScrapingConfig(url: string) {
@@ -709,6 +753,135 @@ export function AdminSourcesPanel() {
         </table>
         {sources.length === 0 && (
           <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
+        )}
+      </div>
+
+      {/* ── Catégories ── */}
+      <div className="mt-10">
+        <button
+          onClick={() => setShowCategorySection(v => !v)}
+          className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-brand-700 transition-colors mb-4"
+        >
+          <span>{showCategorySection ? '▾' : '▸'}</span>
+          Gestion des catégories ({categories.length})
+        </button>
+
+        {showCategorySection && (
+          <div className="space-y-3">
+            {/* Existing categories */}
+            {categories.map(cat => (
+              <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-3">
+                {editingCategory === cat.id ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                        <input value={editCategoryData.name}
+                          onChange={e => setEditCategoryData(d => ({ ...d, name: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
+                        <input value={editCategoryData.slug}
+                          onChange={e => setEditCategoryData(d => ({ ...d, slug: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Icône</label>
+                        <input value={editCategoryData.icon}
+                          onChange={e => setEditCategoryData(d => ({ ...d, icon: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="🏛️" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Couleur</label>
+                        <input value={editCategoryData.color}
+                          onChange={e => setEditCategoryData(d => ({ ...d, color: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="blue" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => saveCategory(cat.id)} disabled={savingCategory}
+                        className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                        {savingCategory ? 'Enregistrement…' : 'Enregistrer'}
+                      </button>
+                      <button onClick={() => setEditingCategory(null)}
+                        className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-lg">{cat.icon}</span>
+                      <div className="min-w-0">
+                        <span className="font-medium text-sm text-gray-900">{cat.name}</span>
+                        <span className="ml-2 text-xs text-gray-400 font-mono">{cat.slug}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => { setEditCategoryData({ name: cat.name, slug: cat.slug, icon: cat.icon ?? '', color: cat.color ?? '' }); setEditingCategory(cat.id) }}
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Éditer">
+                        <Pencil className="size-4" />
+                      </button>
+                      <button onClick={() => deleteCategory(cat.id)}
+                        className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors" title="Supprimer">
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Add category form */}
+            {showCategoryForm ? (
+              <form onSubmit={addCategory} className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Nouvelle catégorie</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Nom <span className="text-red-500">*</span></label>
+                    <input required value={newCategory.name}
+                      onChange={e => setNewCategory(d => ({ ...d, name: e.target.value, slug: toSlug(e.target.value) }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Vie locale" />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
+                    <input value={newCategory.slug}
+                      onChange={e => setNewCategory(d => ({ ...d, slug: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="auto-généré" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Icône</label>
+                    <input value={newCategory.icon}
+                      onChange={e => setNewCategory(d => ({ ...d, icon: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="🏛️" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Couleur</label>
+                    <input value={newCategory.color}
+                      onChange={e => setNewCategory(d => ({ ...d, color: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="blue" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700">
+                    Créer
+                  </button>
+                  <button type="button" onClick={() => setShowCategoryForm(false)}
+                    className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button onClick={() => setShowCategoryForm(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors">
+                <Plus className="size-4" />
+                Ajouter une catégorie
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
