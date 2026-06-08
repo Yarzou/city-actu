@@ -41,7 +41,7 @@ export function AdminSourcesPanel() {
   const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
   const [savingConfig, setSavingConfig] = useState(false)
   const [editingSource, setEditingSource]   = useState<number | null>(null)
-  const [editSourceData, setEditSourceData] = useState({ name: '', url: '' })
+  const [editSourceData, setEditSourceData] = useState({ name: '', url: '', category_id: '' })
   const [savingSource, setSavingSource]     = useState(false)
   const [detecting, setDetecting]         = useState(false)
   const [detectError, setDetectError]     = useState<string | null>(null)
@@ -145,7 +145,7 @@ export function AdminSourcesPanel() {
 
   function openEditSource(source: Source) {
     setEditingConfig(null)
-    setEditSourceData({ name: source.name, url: source.url })
+    setEditSourceData({ name: source.name, url: source.url, category_id: String((source.category as Category | undefined)?.id ?? '') })
     setEditingSource(editingSource === source.id ? null : source.id)
   }
 
@@ -153,12 +153,13 @@ export function AdminSourcesPanel() {
     setSavingSource(true)
     const supabase = createClient()
     const urlChanged = editSourceData.url !== source.url
-    const update: Record<string, unknown> = { name: editSourceData.name, url: editSourceData.url }
+    const update: Record<string, unknown> = { name: editSourceData.name, url: editSourceData.url, category_id: editSourceData.category_id ? parseInt(editSourceData.category_id) : null }
     if (urlChanged && source.type === 'scraping') update.scraping_config = null
     const { error } = await supabase.from('sources').update(update).eq('id', source.id)
     if (!error) {
+      const newCategory = categories.find(c => String(c.id) === editSourceData.category_id)
       setSources(prev => prev.map(s => s.id === source.id
-        ? { ...s, name: editSourceData.name, url: editSourceData.url, scraping_config: (urlChanged && s.type === 'scraping') ? null : s.scraping_config }
+        ? { ...s, name: editSourceData.name, url: editSourceData.url, category: newCategory ?? s.category, scraping_config: (urlChanged && s.type === 'scraping') ? null : s.scraping_config }
         : s))
       setEditingSource(null)
     }
@@ -477,6 +478,14 @@ export function AdminSourcesPanel() {
                       <input type="url" value={editSourceData.url} onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
                     </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+                      <select value={editSourceData.category_id} onChange={e => setEditSourceData(d => ({ ...d, category_id: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        <option value="">— Aucune —</option>
+                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                   {source.type === 'scraping' && editSourceData.url !== source.url && (
                     <p className="text-xs text-orange-700 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
@@ -629,6 +638,14 @@ export function AdminSourcesPanel() {
                               <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
                               <input type="url" value={editSourceData.url} onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+                              <select value={editSourceData.category_id} onChange={e => setEditSourceData(d => ({ ...d, category_id: e.target.value }))}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                                <option value="">— Aucune —</option>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
                             </div>
                           </div>
                           {source.type === 'scraping' && editSourceData.url !== source.url && (
