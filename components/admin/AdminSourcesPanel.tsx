@@ -107,8 +107,7 @@ export function AdminSourcesPanel() {
       'Supprimer',
       async () => {
         closeConfirm()
-        const supabase = createClient()
-        await supabase.from('sources').delete().eq('id', id)
+        await fetch('/api/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: 'sources', id }) })
         setSources(prev => prev.filter(s => s.id !== id))
       }
     )
@@ -229,8 +228,7 @@ export function AdminSourcesPanel() {
       'Supprimer',
       async () => {
         closeConfirm()
-        const supabase = createClient()
-        await supabase.from('categories').delete().eq('id', id)
+        await fetch('/api/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: 'categories', id }) })
         setCategories(prev => prev.filter(c => c.id !== id))
       }
     )
@@ -294,7 +292,7 @@ export function AdminSourcesPanel() {
         setRefreshError(null)
         setFetchResult({})
         try {
-          const res = await fetch('/api/admin/clear-articles', { method: 'POST' })
+          const res = await fetch('/api/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: 'articles' }) })
           const data = await res.json()
           if (!res.ok || !data.ok) {
             setRefreshError('Erreur lors de la suppression : ' + (data.error ?? 'inconnue'))
