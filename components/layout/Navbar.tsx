@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
-  { href: '/la-chapelle-sur-erdre', label: 'La Chapelle-sur-Erdre' },
+  { href: '/admin/sources', label: 'Admin' },
 ]
 
 export function Navbar() {
@@ -40,7 +40,7 @@ export function Navbar() {
       <header className="fixed top-0 inset-x-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors">
+          <Link href="/la-chapelle-sur-erdre" className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors">
             <Newspaper className="size-5" />
             <span>Ville Actu</span>
           </Link>
