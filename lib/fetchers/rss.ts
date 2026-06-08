@@ -14,6 +14,7 @@ export interface FetchedItem {
   content_preview: string | null
   image_url: string | null
   published_at: string | null
+  event_end_date?: string | null
 }
 
 export async function fetchRssFeed(source: Source): Promise<FetchedItem[]> {

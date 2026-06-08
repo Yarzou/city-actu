@@ -40,6 +40,9 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       const dateEl = config.date_selector
         ? $(el).find(config.date_selector).first()
         : null
+      const endDateEl = config.end_date_selector
+        ? $(el).find(config.end_date_selector).first()
+        : null
 
       const title = titleEl.text().trim()
       let url = linkEl.attr('href') ?? titleEl.closest('a').attr('href') ?? ''
@@ -52,9 +55,11 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       const content = contentEl?.text().trim().slice(0, 500) ?? null
       const image = imageEl?.attr('src') ?? imageEl?.attr('data-src') ?? null
       const dateText = dateEl?.attr('content') ?? dateEl?.text().trim() ?? null
+      const endDateText = endDateEl?.attr('content') ?? endDateEl?.text().trim() ?? null
       const published_at = dateText ? parseFrenchDate(dateText) : null
+      const event_end_date = endDateText ? parseFrenchDate(endDateText) : null
 
-      items.push({ title, url, content_preview: content, image_url: image, published_at })
+      items.push({ title, url, content_preview: content, image_url: image, published_at, event_end_date })
     })
 
     return items

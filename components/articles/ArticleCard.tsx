@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import { ExternalLink } from 'lucide-react'
-import { cn, formatDate, truncate } from '@/lib/utils'
+import { cn, formatDate, formatEventDateRange, truncate } from '@/lib/utils'
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '@/lib/types'
 import type { Article } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
@@ -15,6 +15,12 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
+
+  // Prefer event dates over publication date
+  const displayDate = article.published_at
+    ? formatEventDateRange(article.published_at, article.event_end_date ?? null)
+    : null
+  const dateTimeAttr = article.event_end_date ?? article.published_at ?? undefined
 
   return (
     <article className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
@@ -38,9 +44,9 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
             <span>{categoryIcon}</span>
             {article.category?.name ?? 'Actualité'}
           </span>
-          {article.published_at && (
-            <time className="text-xs text-gray-400" dateTime={article.published_at}>
-              {formatDate(article.published_at)}
+          {displayDate && (
+            <time className="text-xs text-gray-400" dateTime={dateTimeAttr}>
+              {displayDate}
             </time>
           )}
         </div>

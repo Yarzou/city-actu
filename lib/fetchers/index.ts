@@ -120,6 +120,7 @@ async function fetchSource(source: Source, categories: Category[]): Promise<Fetc
       url:             item.url,
       image_url:       item.image_url,
       published_at:    item.published_at,
+      event_end_date:  item.event_end_date ?? null,
       is_duplicate:    false,
     })
 

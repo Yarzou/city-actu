@@ -40,6 +40,7 @@ export interface ScrapingConfig {
   content_selector?: string
   image_selector?: string
   date_selector?: string
+  end_date_selector?: string
   base_url?: string
 }
 
@@ -53,6 +54,7 @@ export interface Article {
   url: string
   image_url: string | null
   published_at: string | null
+  event_end_date: string | null
   fetched_at: string
   is_duplicate: boolean
   source?: Source

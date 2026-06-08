@@ -16,6 +16,20 @@ export function formatDate(dateStr: string): string {
   return format(date, 'dd/MM/yyyy', { locale: fr })
 }
 
+export function formatEventDateRange(startStr: string, endStr: string | null): string {
+  const start = new Date(startStr)
+  if (!endStr) return formatDate(startStr)
+  const end = new Date(endStr)
+  // Same day
+  if (format(start, 'yyyy-MM-dd') === format(end, 'yyyy-MM-dd')) return formatDate(startStr)
+  // Same month+year
+  if (format(start, 'MM/yyyy') === format(end, 'MM/yyyy')) {
+    return `${format(start, 'd', { locale: fr })} - ${format(end, 'd MMM yyyy', { locale: fr })}`
+  }
+  // Different months
+  return `${format(start, 'd MMM', { locale: fr })} - ${format(end, 'd MMM yyyy', { locale: fr })}`
+}
+
 export function formatDateShort(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('fr-FR', {
     day: 'numeric',

@@ -14,6 +14,7 @@ const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   content_selector: '',
   image_selector: '',
   date_selector: '',
+  end_date_selector: '',
   base_url: '',
 }
 
@@ -148,6 +149,7 @@ export function AdminSourcesPanel() {
       content_selector: cfg.content_selector ?? '',
       image_selector: cfg.image_selector ?? '',
       date_selector: cfg.date_selector ?? '',
+      end_date_selector: cfg.end_date_selector ?? '',
       base_url: cfg.base_url ?? '',
     })
     setEditingConfig(editingConfig === source.id ? null : source.id)
@@ -1009,11 +1011,18 @@ function ScrapingConfigFields({
             placeholder="img" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date début</label>
           <input value={config.date_selector ?? ''}
             onChange={e => onChange({ ...config, date_selector: e.target.value })}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
-            placeholder="time, .date" />
+            placeholder='[itemprop="startDate"], time, .date' />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date fin <span className="text-gray-400 font-normal">(événements multi-jours)</span></label>
+          <input value={config.end_date_selector ?? ''}
+            onChange={e => onChange({ ...config, end_date_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder='[itemprop="endDate"]' />
         </div>
         <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
@@ -1033,9 +1042,10 @@ function buildScrapingConfig(c: ScrapingConfig): ScrapingConfig {
     title_selector: c.title_selector,
     link_selector: c.link_selector || 'a',
   }
-  if (c.content_selector) config.content_selector = c.content_selector
-  if (c.image_selector)   config.image_selector   = c.image_selector
-  if (c.date_selector)    config.date_selector     = c.date_selector
-  if (c.base_url)         config.base_url          = c.base_url
+  if (c.content_selector)   config.content_selector   = c.content_selector
+  if (c.image_selector)     config.image_selector     = c.image_selector
+  if (c.date_selector)      config.date_selector      = c.date_selector
+  if (c.end_date_selector)  config.end_date_selector  = c.end_date_selector
+  if (c.base_url)           config.base_url           = c.base_url
   return config
 }
