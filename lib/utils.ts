@@ -10,13 +10,10 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const days = Math.floor(diff / 86400000)
-  if (days === 0) return "Aujourd'hui"
-  if (days === 1) return 'Hier'
-  if (days < 7) return `Il y a ${days} jours`
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+  if (isToday(date)) return "Aujourd'hui"
+  if (isYesterday(date)) return 'Hier'
+  if (isTomorrow(date)) return 'Demain'
+  return format(date, 'dd/MM/yyyy', { locale: fr })
 }
 
 export function formatDateShort(dateStr: string): string {
