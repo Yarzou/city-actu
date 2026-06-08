@@ -2,7 +2,7 @@
   "name": "Ville Actu — La Chapelle-sur-Erdre",
   "short_name": "Ville Actu",
   "description": "Actualités locales agrégées pour La Chapelle-sur-Erdre",
-  "start_url": "/",
+  "start_url": "/la-chapelle-sur-erdre",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f9fafb",

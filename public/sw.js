@@ -1,4 +1,4 @@
-const CACHE = 'ville-actu-v2'
+const CACHE = 'ville-actu-v3'
 const OFFLINE_URL = '/offline'
 
 // Assets to pre-cache
@@ -31,10 +31,12 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached
-      // iOS Safari PWA rejects redirect responses from service workers —
-      // use redirect:'follow' so we always return the final 200 response.
       const req = new Request(event.request, { redirect: 'follow' })
       return fetch(req).then((response) => {
+        // iOS Safari PWA rejects redirect responses — bail out on redirects
+        if (!response || response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+          return response
+        }
         // Cache HTML pages and static assets
         if (
           response.ok &&
