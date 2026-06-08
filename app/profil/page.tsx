@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from '@/components/articles/ArticleCard'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
-import { LogOut, Heart } from 'lucide-react'
+import { LogOut, Heart, Settings } from 'lucide-react'
 import type { Article as ArticleType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export default function ProfilPage() {
   const router = useRouter()
-  const [tab, setTab]             = useState<'favorites'>('favorites')
+  const [tab, setTab]             = useState<'favorites' | 'admin'>('favorites')
   const [userId, setUserId]       = useState<string | null>(null)
   const [email, setEmail]         = useState<string | null>(null)
   const [favorites, setFavorites] = useState<ArticleType[]>([])
@@ -78,11 +78,13 @@ export default function ProfilPage() {
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {[
           { id: 'favorites', label: 'Favoris', icon: <Heart className="size-4" />, count: favorites.length },
+          { id: 'admin',     label: 'Admin',   icon: <Settings className="size-4" />, count: 0 },
         ].map(({ id, label, icon, count }) => (
           <button
             key={id}
             onClick={() => {
-              setTab(id as 'favorites')
+              if (id === 'admin') { router.push('/admin/sources'); return }
+              setTab(id as 'favorites' | 'admin')
             }}
             className={cn(
               'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import type { User } from '@supabase/supabase-js'
 
 const NAV_LINKS = [
-  { href: '/admin/sources', label: 'Admin' },
+  { href: '/la-chapelle-sur-erdre', label: 'La Chapelle-sur-Erdre' },
 ]
 
 export function Navbar() {
