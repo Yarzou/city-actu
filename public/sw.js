@@ -1,9 +1,9 @@
-const CACHE = 'ville-actu-v1'
+const CACHE = 'ville-actu-v2'
 const OFFLINE_URL = '/offline'
 
 // Assets to pre-cache
 const PRECACHE = [
-  '/',
+  '/la-chapelle-sur-erdre',
   '/offline',
   '/manifest.json',
 ]

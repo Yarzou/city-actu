@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from '@/components/articles/ArticleCard'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
 import { LogOut, Heart, Settings } from 'lucide-react'
+import { AdminSourcesPanel } from '@/components/admin/AdminSourcesPanel'
 import type { Article as ArticleType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -83,7 +84,6 @@ export default function ProfilPage() {
           <button
             key={id}
             onClick={() => {
-              if (id === 'admin') { router.push('/admin/sources'); return }
               setTab(id as 'favorites' | 'admin')
             }}
             className={cn(
@@ -118,6 +118,7 @@ export default function ProfilPage() {
           </div>
         )
       )}
+      {tab === 'admin' && <AdminSourcesPanel />}
     </div>
   )
 }
