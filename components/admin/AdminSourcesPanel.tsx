@@ -56,6 +56,7 @@ export function AdminSourcesPanel() {
   const [savingCategory, setSavingCategory]     = useState(false)
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [newCategory, setNewCategory]           = useState({ name: '', slug: '', icon: '', color: '' })
+  const [deletingAll, setDeletingAll]           = useState(false)
   const [form, setForm] = useState({
     city_id: '',
     category_id: '',
@@ -256,6 +257,18 @@ export function AdminSourcesPanel() {
     setDetectingConfig(false)
   }
 
+  async function deleteAllArticles() {
+    if (!confirm('Supprimer TOUS les articles importés ? Cette action est irréversible.')) return
+    setDeletingAll(true)
+    setRefreshResult(null)
+    setRefreshError(null)
+    setFetchResult({})
+    const supabase = createClient()
+    const { error } = await supabase.from('articles').delete().neq('id', 0)
+    if (error) setRefreshError('Erreur lors de la suppression : ' + error.message)
+    setDeletingAll(false)
+  }
+
   async function refreshAllSources() {
     setRefreshing(true)
     setRefreshResult(null)
@@ -317,8 +330,17 @@ export function AdminSourcesPanel() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={deleteAllArticles}
+            disabled={deletingAll || refreshing}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+            title="Supprimer tous les articles importés"
+          >
+            <Trash2 className={cn('size-4', deletingAll && 'animate-pulse')} />
+            <span className="hidden sm:inline">{deletingAll ? 'Suppression…' : 'Tout supprimer'}</span>
+          </button>
+          <button
             onClick={refreshAllSources}
-            disabled={refreshing}
+            disabled={refreshing || deletingAll}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
