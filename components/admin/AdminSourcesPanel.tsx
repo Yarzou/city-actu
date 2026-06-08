@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2 } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   list_selector: '',
@@ -57,6 +58,16 @@ export function AdminSourcesPanel() {
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [newCategory, setNewCategory]           = useState({ name: '', slug: '', icon: '', color: '' })
   const [deletingAll, setDeletingAll]           = useState(false)
+  // Confirm dialog state
+  const [confirm, setConfirm] = useState<{ open: boolean; title: string; message: string; confirmLabel: string; onConfirm: () => void }>({
+    open: false, title: '', message: '', confirmLabel: 'Confirmer', onConfirm: () => {},
+  })
+  function askConfirm(title: string, message: string, confirmLabel: string, onConfirm: () => void) {
+    setConfirm({ open: true, title, message, confirmLabel, onConfirm })
+  }
+  function closeConfirm() {
+    setConfirm(c => ({ ...c, open: false }))
+  }
   const [form, setForm] = useState({
     city_id: '',
     category_id: '',
@@ -90,10 +101,17 @@ export function AdminSourcesPanel() {
   }
 
   async function deleteSource(id: number) {
-    if (!confirm('Supprimer cette source ?')) return
-    const supabase = createClient()
-    await supabase.from('sources').delete().eq('id', id)
-    setSources(prev => prev.filter(s => s.id !== id))
+    askConfirm(
+      'Supprimer la source',
+      'Cette source et ses données associées seront supprimées.',
+      'Supprimer',
+      async () => {
+        closeConfirm()
+        const supabase = createClient()
+        await supabase.from('sources').delete().eq('id', id)
+        setSources(prev => prev.filter(s => s.id !== id))
+      }
+    )
   }
 
   async function addSource(e: React.FormEvent) {
@@ -205,10 +223,17 @@ export function AdminSourcesPanel() {
   }
 
   async function deleteCategory(id: number) {
-    if (!confirm('Supprimer cette catégorie ? Les sources associées perdront leur catégorie.')) return
-    const supabase = createClient()
-    await supabase.from('categories').delete().eq('id', id)
-    setCategories(prev => prev.filter(c => c.id !== id))
+    askConfirm(
+      'Supprimer la catégorie',
+      'Les sources associées à cette catégorie perdront leur catégorie.',
+      'Supprimer',
+      async () => {
+        closeConfirm()
+        const supabase = createClient()
+        await supabase.from('categories').delete().eq('id', id)
+        setCategories(prev => prev.filter(c => c.id !== id))
+      }
+    )
   }
 
   async function detectScrapingConfig(url: string) {
@@ -258,15 +283,28 @@ export function AdminSourcesPanel() {
   }
 
   async function deleteAllArticles() {
-    if (!confirm('Supprimer TOUS les articles importés ? Cette action est irréversible.')) return
-    setDeletingAll(true)
-    setRefreshResult(null)
-    setRefreshError(null)
-    setFetchResult({})
-    const supabase = createClient()
-    const { error } = await supabase.from('articles').delete().neq('id', 0)
-    if (error) setRefreshError('Erreur lors de la suppression : ' + error.message)
-    setDeletingAll(false)
+    askConfirm(
+      'Tout supprimer',
+      'Supprimer tous les articles importés ? Cette action est irréversible.',
+      'Tout supprimer',
+      async () => {
+        closeConfirm()
+        setDeletingAll(true)
+        setRefreshResult(null)
+        setRefreshError(null)
+        setFetchResult({})
+        try {
+          const res = await fetch('/api/admin/clear-articles', { method: 'POST' })
+          const data = await res.json()
+          if (!res.ok || !data.ok) {
+            setRefreshError('Erreur lors de la suppression : ' + (data.error ?? 'inconnue'))
+          }
+        } catch {
+          setRefreshError('Erreur réseau')
+        }
+        setDeletingAll(false)
+      }
+    )
   }
 
   async function refreshAllSources() {
@@ -906,6 +944,16 @@ export function AdminSourcesPanel() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        confirmLabel={confirm.confirmLabel}
+        destructive
+        onConfirm={confirm.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   )
 }
