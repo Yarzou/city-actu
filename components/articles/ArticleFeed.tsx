@@ -15,6 +15,26 @@ import { cn, groupByDay, formatDayHeader } from '@/lib/utils'
 
 const PAGE_SIZE = 20
 
+/**
+ * Sorts articles for the default (no date filter) view:
+ * 1. Upcoming events (published_at >= now) → ascending (nearest first)
+ * 2. Past articles (published_at < now or null) → descending (most recent first)
+ */
+function sortByProximity(items: ArticleType[]): ArticleType[] {
+  const now = Date.now()
+  const future = items
+    .filter(a => a.published_at && new Date(a.published_at).getTime() >= now)
+    .sort((a, b) => new Date(a.published_at!).getTime() - new Date(b.published_at!).getTime())
+  const past = items
+    .filter(a => !a.published_at || new Date(a.published_at).getTime() < now)
+    .sort((a, b) => {
+      const ta = a.published_at ? new Date(a.published_at).getTime() : new Date(a.fetched_at).getTime()
+      const tb = b.published_at ? new Date(b.published_at).getTime() : new Date(b.fetched_at).getTime()
+      return tb - ta
+    })
+  return [...future, ...past]
+}
+
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
@@ -70,9 +90,12 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
     const results = data ?? []
     setHasMore(results.length === PAGE_SIZE)
     if (reset) {
-      setArticles(results)
+      setArticles(range ? results : sortByProximity(results))
     } else {
-      setArticles(prev => [...prev, ...results])
+      setArticles(prev => {
+        const next = range ? results : sortByProximity(results)
+        return [...prev, ...next]
+      })
     }
     setOffset(currentOffset + results.length)
   }, [citySlug, categorySlug, offset, dateRange])
