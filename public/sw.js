@@ -1,9 +1,8 @@
-const CACHE = 'ville-actu-v3'
+const CACHE = 'ville-actu-v4'
 const OFFLINE_URL = '/offline'
 
 // Assets to pre-cache
 const PRECACHE = [
-  '/la-chapelle-sur-erdre',
   '/offline',
   '/manifest.json',
 ]
@@ -27,34 +26,26 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   // Only handle same-origin requests
   if (url.origin !== self.location.origin) return
+  // Never intercept navigation requests — server-side redirects (307, 308…)
+  // cannot be forwarded by a service worker and cause ERR_FAILED in Chrome.
+  // The browser handles navigations natively.
+  if (event.request.mode === 'navigate') return
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached
-      const req = new Request(event.request, { redirect: 'follow' })
-      return fetch(req).then((response) => {
-        // iOS Safari PWA rejects redirect responses — bail out on redirects
-        if (!response || response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
-          return response
-        }
-        // Cache HTML pages and static assets
+      return fetch(event.request).then((response) => {
+        // Cache static assets only
         if (
           response.ok &&
-          (event.request.destination === 'document' ||
-            event.request.destination === 'script' ||
+          (event.request.destination === 'script' ||
             event.request.destination === 'style' ||
             event.request.destination === 'image')
         ) {
-          const clone = response.clone()
-          caches.open(CACHE).then((cache) => cache.put(event.request, clone))
+          caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()))
         }
         return response
-      }).catch(() => {
-        if (event.request.destination === 'document') {
-          return caches.match(OFFLINE_URL) ?? new Response('Offline', { status: 503 })
-        }
-        return new Response('', { status: 503 })
-      })
+      }).catch(() => new Response('', { status: 503 }))
     })
   )
 })
