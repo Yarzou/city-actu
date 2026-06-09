@@ -41,6 +41,7 @@ export interface ScrapingConfig {
   image_selector?: string
   date_selector?: string
   end_date_selector?: string
+  detail_date_selector?: string
   base_url?: string
 }
 

@@ -114,6 +114,10 @@ profiles          — Profil utilisateur (id = auth.users.id)
 cities            — Villes (slug unique, lat/lng)
 categories        — Catégories d'articles (slug unique, icon emoji, color Tailwind)
 sources           — Sources RSS ou scraping (city_id, category_id, url, scraping_config JSON)
+  — ScrapingConfig : list_selector, title_selector, link_selector, content_selector?,
+    image_selector?, date_selector?, end_date_selector?, detail_date_selector?, base_url?
+  — detail_date_selector : quand défini, le scraper suit chaque lien de la liste et parse
+    la div cible sur la page détail (format FR "Du X au Y mois" → published_at + event_end_date)
 articles          — Articles agrégés (url UNIQUE, is_duplicate, event_end_date)
 user_favorites    — Favoris (user_id, article_id) PK composite
 user_alerts       — Alertes utilisateur (user_id, city_id, category_id)

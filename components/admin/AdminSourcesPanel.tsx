@@ -15,6 +15,7 @@ const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   image_selector: '',
   date_selector: '',
   end_date_selector: '',
+  detail_date_selector: '',
   base_url: '',
 }
 
@@ -150,6 +151,7 @@ export function AdminSourcesPanel() {
       image_selector: cfg.image_selector ?? '',
       date_selector: cfg.date_selector ?? '',
       end_date_selector: cfg.end_date_selector ?? '',
+      detail_date_selector: cfg.detail_date_selector ?? '',
       base_url: cfg.base_url ?? '',
     })
     setEditingConfig(editingConfig === source.id ? null : source.id)
@@ -1025,6 +1027,16 @@ function ScrapingConfigFields({
             placeholder='[itemprop="endDate"]' />
         </div>
         <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Sélecteur date sur page détail
+            <span className="text-gray-400 font-normal ml-1">(si les dates sont absentes de la liste — format "Du X au Y mois")</span>
+          </label>
+          <input value={config.detail_date_selector ?? ''}
+            onChange={e => onChange({ ...config, detail_date_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder='.date, .event-date' />
+        </div>
+        <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
           <input value={config.base_url ?? ''}
             onChange={e => onChange({ ...config, base_url: e.target.value })}
@@ -1042,10 +1054,11 @@ function buildScrapingConfig(c: ScrapingConfig): ScrapingConfig {
     title_selector: c.title_selector,
     link_selector: c.link_selector || 'a',
   }
-  if (c.content_selector)   config.content_selector   = c.content_selector
-  if (c.image_selector)     config.image_selector     = c.image_selector
-  if (c.date_selector)      config.date_selector      = c.date_selector
-  if (c.end_date_selector)  config.end_date_selector  = c.end_date_selector
-  if (c.base_url)           config.base_url           = c.base_url
+  if (c.content_selector)        config.content_selector        = c.content_selector
+  if (c.image_selector)          config.image_selector          = c.image_selector
+  if (c.date_selector)           config.date_selector           = c.date_selector
+  if (c.end_date_selector)       config.end_date_selector       = c.end_date_selector
+  if (c.detail_date_selector)    config.detail_date_selector    = c.detail_date_selector
+  if (c.base_url)                config.base_url                = c.base_url
   return config
 }
