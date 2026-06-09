@@ -1,6 +1,9 @@
+'use client'
+
+import { useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink } from 'lucide-react'
-import { cn, formatDate, formatEventDateRange, truncate } from '@/lib/utils'
+import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '@/lib/types'
 import type { Article } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
@@ -16,11 +19,19 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
 
-  // Prefer event dates over publication date
   const displayDate = article.published_at
     ? formatEventDateRange(article.published_at, article.event_end_date ?? null)
     : null
   const dateTimeAttr = article.event_end_date ?? article.published_at ?? undefined
+
+  const [expanded, setExpanded] = useState(false)
+  const [isClamped, setIsClamped] = useState(false)
+  const textRef = useRef<HTMLParagraphElement>(null)
+
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (el) setIsClamped(el.scrollHeight > el.clientHeight + 2)
+  }, [article.content_preview])
 
   return (
     <article className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
@@ -58,9 +69,28 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
 
         {/* Preview */}
         {article.content_preview && (
-          <p className="text-xs text-gray-500 line-clamp-3 flex-1">
-            {truncate(article.content_preview, 200)}
-          </p>
+          <div className="flex-1">
+            <p
+              ref={textRef}
+              className={cn(
+                'text-xs text-gray-500',
+                !expanded && 'line-clamp-3'
+              )}
+            >
+              {article.content_preview}
+            </p>
+            {(isClamped || expanded) && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpanded(v => !v) }}
+                className="mt-1 inline-flex items-center gap-0.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
+              >
+                {expanded
+                  ? <><ChevronUp className="size-3" /> Voir moins</>
+                  : <><ChevronDown className="size-3" /> Voir plus</>
+                }
+              </button>
+            )}
+          </div>
         )}
 
         {/* Source + Actions */}
