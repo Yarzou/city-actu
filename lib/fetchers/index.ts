@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { fetchRssFeed } from './rss'
 import { fetchScrapingSource } from './scraper'
-import { classifyArticle } from './classifier'
-import type { Source, Category } from '@/lib/types'
+import type { Source } from '@/lib/types'
 
 // Use service role to bypass RLS during cron writes
 function getServiceClient() {
@@ -23,10 +22,6 @@ export interface FetchResult {
 export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]> {
   const supabase = getServiceClient()
 
-  // Load all categories once for classification
-  const { data: categories } = await supabase.from('categories').select('*')
-  const cats: Category[] = categories ?? []
-
   let query = supabase
     .from('sources')
     .select('*, city:cities(id,slug), category:categories(id,slug)')
@@ -45,7 +40,7 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
 
   const results: FetchResult[] = []
   for (const source of sources as Source[]) {
-    const result = await fetchSource(source, cats)
+    const result = await fetchSource(source)
     results.push(result)
     await sleep(500)
   }
@@ -55,24 +50,21 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
 export async function fetchSourceById(sourceId: number): Promise<FetchResult[]> {
   const supabase = getServiceClient()
 
-  const [{ data: source, error }, { data: categories }] = await Promise.all([
-    supabase
-      .from('sources')
-      .select('*, city:cities(id,slug), category:categories(id,slug)')
-      .eq('id', sourceId)
-      .single(),
-    supabase.from('categories').select('*'),
-  ])
+  const { data: source, error } = await supabase
+    .from('sources')
+    .select('*, city:cities(id,slug), category:categories(id,slug)')
+    .eq('id', sourceId)
+    .single()
 
   if (error || !source) {
     console.error('[Orchestrator] Source introuvable:', sourceId, error)
     return []
   }
 
-  return [await fetchSource(source as Source, (categories ?? []) as Category[])]
+  return [await fetchSource(source as Source)]
 }
 
-async function fetchSource(source: Source, categories: Category[]): Promise<FetchResult> {
+async function fetchSource(source: Source): Promise<FetchResult> {
   const result: FetchResult = {
     sourceId: source.id,
     fetched: 0,
@@ -104,17 +96,10 @@ async function fetchSource(source: Source, categories: Category[]): Promise<Fetc
   for (const item of items) {
     if (!item.url) { result.skipped++; continue }
 
-    const categoryId = classifyArticle(
-      item.title,
-      item.content_preview ?? null,
-      source.category_id,
-      categories,
-    )
-
     const { error } = await supabase.from('articles').insert({
       source_id:       source.id,
       city_id:         source.city_id,
-      category_id:     categoryId,
+      category_id:     source.category_id,
       title:           item.title,
       content_preview: item.content_preview,
       url:             item.url,
