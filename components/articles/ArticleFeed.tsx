@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from './ArticleCard'
@@ -53,6 +53,8 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
   const [dateRange, setDateRange]   = useState<DateRange | null>(null)
   const [activeDates, setActiveDates] = useState<string[]>([])
   const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange) => {
     const supabase = createClient()
@@ -174,6 +176,31 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
     fetchActiveDates(month)
   }
 
+  async function handleRefresh() {
+    setRefreshing(true)
+    setRefreshFeedback(null)
+    try {
+      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      const data = await res.json()
+      if (res.status === 401) {
+        setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
+      } else if (data.ok) {
+        const s = data.summary
+        setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)` })
+        setOffset(0)
+        setLoading(true)
+        await fetchArticles(true, dateRange)
+        setLoading(false)
+      } else {
+        setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
+      }
+    } catch {
+      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
+    }
+    setRefreshing(false)
+    setTimeout(() => setRefreshFeedback(null), 5000)
+  }
+
   const currentCategory = categories.find(c => c.slug === categorySlug)
   const grouped = dateRange ? groupByDay(articles) : null
 
@@ -190,11 +217,29 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
             <span className="text-gray-700">{currentCategory.name}</span>
           </div>
         )}
-        <h1 className="text-2xl font-bold text-gray-900">
-          {currentCategory
-            ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
-            : cityName || citySlug}
-        </h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold text-gray-900">
+            {currentCategory
+              ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
+              : cityName || citySlug}
+          </h1>
+          {userId && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Rafraîchir les sources"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
+            </button>
+          )}
+        </div>
+        {refreshFeedback && (
+          <p className={cn('mt-2 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
+            {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
+          </p>
+        )}
       </div>
 
       {/* Main layout: calendar (desktop) + content */}
@@ -215,11 +260,11 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
           </div>
 
           {/* Category filter tabs */}
-          <div className="flex flex-wrap gap-2 mb-6">
+          <div className="flex flex-nowrap overflow-x-auto scrollbar-hide gap-2 mb-6 sm:flex-wrap">
             <Link
               href={`/${citySlug}`}
               className={cn(
-                'px-3 py-1.5 rounded-full text-sm border transition-colors',
+                'shrink-0 px-3 py-1.5 rounded-full text-sm border transition-colors',
                 !categorySlug
                   ? 'bg-brand-600 text-white border-brand-600'
                   : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
@@ -232,7 +277,7 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
                 key={cat.id}
                 href={`/${citySlug}/${cat.slug}`}
                 className={cn(
-                  'inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border transition-colors',
+                  'shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border transition-colors',
                   categorySlug === cat.slug
                     ? 'bg-brand-600 text-white border-brand-600'
                     : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'

@@ -64,12 +64,12 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-nowrap overflow-x-auto scrollbar-hide items-center gap-2 sm:flex-wrap">
       {/* × clear button — only when a filter is active */}
       {value && (
         <button
           onClick={() => onChange(null)}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors"
+          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors"
         >
           <span>×</span>
           {value.label}
@@ -81,7 +81,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
           key={label}
           onClick={() => handlePill(label)}
           className={cn(
-            'px-3 py-1.5 rounded-full text-sm border transition-colors',
+            'shrink-0 px-3 py-1.5 rounded-full text-sm border transition-colors',
             value?.label === label
               ? 'bg-brand-600 text-white border-brand-600'
               : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
@@ -95,7 +95,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
       <button
         onClick={() => dateInputRef.current?.showPicker?.()}
         className={cn(
-          'sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors',
+          'shrink-0 sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors',
           value && !PILLS.includes(value.label as typeof PILLS[number])
             ? 'bg-brand-600 text-white border-brand-600'
             : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
