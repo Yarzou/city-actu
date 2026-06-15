@@ -11,12 +11,18 @@ function getServiceClient() {
   )
 }
 
+export interface InsertedArticle {
+  title: string
+  content_preview?: string
+}
+
 export interface FetchResult {
   sourceId: number
   fetched: number
   inserted: number
   skipped: number
   errors: string[]
+  insertedArticles: InsertedArticle[]
 }
 
 export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]> {
@@ -71,6 +77,7 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     inserted: 0,
     skipped: 0,
     errors: [],
+    insertedArticles: [],
   }
 
   // Guard: scraping sources without config can't be fetched
@@ -117,6 +124,7 @@ async function fetchSource(source: Source): Promise<FetchResult> {
       }
     } else {
       result.inserted++
+      result.insertedArticles.push({ title: item.title, content_preview: item.content_preview ?? undefined })
     }
   }
 

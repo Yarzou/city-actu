@@ -40,6 +40,7 @@ export function AdminSourcesPanel() {
     sources: number; fetched: number; inserted: number; skipped: number; errors: number
   } | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [editingConfig, setEditingConfig] = useState<number | null>(null)
   const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
   const [savingConfig, setSavingConfig] = useState(false)
@@ -313,6 +314,7 @@ export function AdminSourcesPanel() {
     setRefreshing(true)
     setRefreshResult(null)
     setRefreshError(null)
+    setAiSummary(null)
     setFetchResult({})
     try {
       const res = await fetch('/api/admin/refresh', { method: 'POST' })
@@ -321,6 +323,7 @@ export function AdminSourcesPanel() {
         setRefreshError('Vous devez être connecté pour rafraîchir les sources.')
       } else if (data.ok) {
         setRefreshResult(data.summary)
+        if (data.aiSummary) setAiSummary(data.aiSummary)
         if (Array.isArray(data.results)) {
           const byId: Record<number, FetchResultDetail> = {}
           for (const r of data.results as FetchResultDetail[]) byId[r.sourceId] = r
@@ -406,13 +409,21 @@ export function AdminSourcesPanel() {
 
       {/* Refresh result banner */}
       {refreshResult && (
-        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-6 text-sm text-green-800">
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-800">
           <span>
             ✅ {refreshResult.sources} source(s) — {refreshResult.fetched} article(s) récupéré(s),{' '}
             <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.skipped} ignoré(s)
             {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
           </span>
-          <button onClick={() => setRefreshResult(null)} className="ml-4 text-green-600 hover:text-green-800">✕</button>
+          <button onClick={() => { setRefreshResult(null); setAiSummary(null) }} className="ml-4 text-green-600 hover:text-green-800">✕</button>
+        </div>
+      )}
+
+      {/* AI digest */}
+      {aiSummary && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-6 text-sm text-purple-900">
+          <p className="font-semibold text-purple-700 mb-1">✨ Synthèse IA des nouveaux articles</p>
+          <p className="leading-relaxed">{aiSummary}</p>
         </div>
       )}
 

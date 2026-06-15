@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
+import { summarizeArticles } from '@/lib/llm/gemini'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -35,7 +36,13 @@ export async function POST(request: Request) {
       { sources: 0, fetched: 0, inserted: 0, skipped: 0, errors: 0 }
     )
 
-    return NextResponse.json({ ok: true, summary, results, timestamp: new Date().toISOString() })
+    let aiSummary: string | null = null
+    if (summary.inserted > 0) {
+      const allInserted = results.flatMap(r => r.insertedArticles)
+      aiSummary = await summarizeArticles(allInserted)
+    }
+
+    return NextResponse.json({ ok: true, summary, results, aiSummary, timestamp: new Date().toISOString() })
   } catch (err) {
     console.error('[Admin] refresh erreur:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
