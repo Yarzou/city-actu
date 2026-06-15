@@ -31,11 +31,19 @@ export async function POST(request: Request) {
 
   const service = getServiceClient()
 
-  // Fetch the N most recent non-duplicate articles
+  // Compute start of current week (Monday 00:00:00)
+  const now = new Date()
+  const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1 // Mon=0 … Sun=6
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - dayOfWeek)
+  monday.setHours(0, 0, 0, 0)
+
+  // Fetch articles from current week, non-duplicate
   let query = service
     .from('articles')
     .select('title, content_preview, city_id')
     .eq('is_duplicate', false)
+    .gte('published_at', monday.toISOString())
     .order('published_at', { ascending: false })
     .limit(limit)
 
