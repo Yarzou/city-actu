@@ -20,4 +20,10 @@
   <!-- Suppression des catégories emploi, infos-pratiques et sorties-adultes -->
   <include file="liquibase/changelog/005-remove-categories.sql"/>
 
+  <!-- Ajout du champ event_end_date sur les articles -->
+  <include file="liquibase/changelog/006-event-end-date.sql"/>
+
+  <!-- Table import_summaries : historique des résumés IA -->
+  <include file="liquibase/changelog/007-import-summaries.sql"/>
+
 </databaseChangeLog>

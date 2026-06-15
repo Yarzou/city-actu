@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
 import { summarizeArticles } from '@/lib/llm/gemini'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
+
+function getServiceClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -15,9 +23,11 @@ export async function POST(request: Request) {
   }
 
   let sourceId: number | undefined
+  let cityId: number | undefined
   try {
     const body = await request.json().catch(() => ({}))
     if (body.sourceId) sourceId = Number(body.sourceId)
+    if (body.cityId) cityId = Number(body.cityId)
   } catch {}
 
   try {
@@ -40,6 +50,16 @@ export async function POST(request: Request) {
     if (summary.inserted > 0) {
       const allInserted = results.flatMap(r => r.insertedArticles)
       aiSummary = await summarizeArticles(allInserted)
+
+      if (aiSummary) {
+        const service = getServiceClient()
+        await service.from('import_summaries').insert({
+          city_id: cityId ?? null,
+          summary_text: aiSummary,
+          articles_count: summary.inserted,
+          source: 'refresh',
+        })
+      }
     }
 
     return NextResponse.json({ ok: true, summary, results, aiSummary, timestamp: new Date().toISOString() })

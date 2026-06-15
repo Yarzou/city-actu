@@ -89,6 +89,15 @@ export interface Profile {
   created_at: string
 }
 
+export interface ImportSummary {
+  id: number
+  city_id: number | null
+  summary_text: string
+  articles_count: number
+  source: 'refresh' | 'on_demand'
+  created_at: string
+}
+
 // Category display metadata
 export const CATEGORY_COLORS: Record<string, string> = {
   'sorties-enfants':  'bg-pink-100 text-pink-800',

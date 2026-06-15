@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2 } from 'lucide-react'
-import type { Source, Category, City, ScrapingConfig } from '@/lib/types'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -41,6 +41,10 @@ export function AdminSourcesPanel() {
   } | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const [importSummaries, setImportSummaries] = useState<ImportSummary[]>([])
+  const [showSummaryHistory, setShowSummaryHistory] = useState(false)
+  const [summarizingRecent, setSummarizingRecent] = useState(false)
+  const [summarizeError, setSummarizeError] = useState<string | null>(null)
   const [editingConfig, setEditingConfig] = useState<number | null>(null)
   const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
   const [savingConfig, setSavingConfig] = useState(false)
@@ -84,14 +88,16 @@ export function AdminSourcesPanel() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const [{ data: src }, { data: cats }, { data: cts }] = await Promise.all([
+      const [{ data: src }, { data: cats }, { data: cts }, { data: summaries }] = await Promise.all([
         supabase.from('sources').select('*, city:cities(id,name), category:categories(id,name,slug)').order('name'),
         supabase.from('categories').select('*').order('name'),
         supabase.from('cities').select('*').order('name'),
+        supabase.from('import_summaries').select('*').order('created_at', { ascending: false }).limit(20),
       ])
       setSources(src ?? [])
       setCategories(cats ?? [])
       setCities(cts ?? [])
+      setImportSummaries((summaries as ImportSummary[]) ?? [])
       setLoading(false)
     }
     load()
@@ -361,6 +367,34 @@ export function AdminSourcesPanel() {
     setFetching(null)
   }
 
+  async function summarizeRecent() {
+    setSummarizingRecent(true)
+    setSummarizeError(null)
+    try {
+      const res = await fetch('/api/admin/summarize-recent', { method: 'POST' })
+      const data = await res.json()
+      if (res.status === 401) {
+        setSummarizeError('Vous devez être connecté.')
+      } else if (data.ok) {
+        setAiSummary(data.aiSummary)
+        // Prepend to local history
+        setImportSummaries(prev => [{
+          id: Date.now(),
+          city_id: null,
+          summary_text: data.aiSummary,
+          articles_count: data.articlesCount,
+          source: 'on_demand' as const,
+          created_at: new Date().toISOString(),
+        }, ...prev])
+      } else {
+        setSummarizeError(data.error ?? 'Erreur inconnue')
+      }
+    } catch {
+      setSummarizeError('Erreur réseau')
+    }
+    setSummarizingRecent(false)
+  }
+
   if (loading) return <div className="py-8 text-gray-400 text-sm">Chargement…</div>
 
   return (
@@ -388,6 +422,15 @@ export function AdminSourcesPanel() {
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}</span>
+          </button>
+          <button
+            onClick={summarizeRecent}
+            disabled={summarizingRecent || refreshing}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors"
+            title="Résumer les 10 articles les plus récents via IA"
+          >
+            <Sparkles className={cn('size-4', summarizingRecent && 'animate-pulse')} />
+            <span className="hidden sm:inline">{summarizingRecent ? 'Génération…' : 'Résumé IA'}</span>
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -421,9 +464,52 @@ export function AdminSourcesPanel() {
 
       {/* AI digest */}
       {aiSummary && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-6 text-sm text-purple-900">
-          <p className="font-semibold text-purple-700 mb-1">✨ Synthèse IA des nouveaux articles</p>
+        <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-4 text-sm text-purple-900">
+          <p className="font-semibold text-purple-700 mb-1">✨ Synthèse IA</p>
           <p className="leading-relaxed">{aiSummary}</p>
+        </div>
+      )}
+
+      {/* Summarize error */}
+      {summarizeError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm text-red-800">
+          <span>❌ {summarizeError}</span>
+          <button onClick={() => setSummarizeError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
+        </div>
+      )}
+
+      {/* Summary history */}
+      {importSummaries.length > 0 && (
+        <div className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowSummaryHistory(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="size-4 text-purple-500" />
+              Historique des résumés IA ({importSummaries.length})
+            </span>
+            {showSummaryHistory ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+          </button>
+          {showSummaryHistory && (
+            <div className="divide-y divide-gray-100">
+              {importSummaries.map(s => (
+                <div key={s.id} className="px-4 py-3 bg-white">
+                  <div className="flex items-center gap-2 mb-1 text-xs text-gray-400">
+                    <span>{new Date(s.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className={cn(
+                      'px-1.5 py-0.5 rounded-full font-medium',
+                      s.source === 'refresh' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'
+                    )}>
+                      {s.source === 'refresh' ? 'Refresh' : 'À la demande'}
+                    </span>
+                    <span>{s.articles_count} article(s)</span>
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{s.summary_text}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
