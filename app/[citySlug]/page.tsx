@@ -1,4 +1,4 @@
-import { ArticleFeed } from '@/components/articles/ArticleFeed'
+import { CityHomePage } from '@/components/articles/CityHomePage'
 
 interface PageProps {
   params: Promise<{ citySlug: string }>
@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function CityPage({ params }: PageProps) {
   const { citySlug } = await params
-  return <ArticleFeed citySlug={citySlug} />
+  return <CityHomePage citySlug={citySlug} />
 }

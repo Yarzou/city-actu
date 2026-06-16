@@ -38,9 +38,11 @@ function sortByProximity(items: ArticleType[]): ArticleType[] {
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
+  hideHeader?: boolean
+  hideMiniCalendar?: boolean
 }
 
-export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
+export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMiniCalendar = false }: ArticleFeedProps) {
   const [articles, setArticles]     = useState<ArticleType[]>([])
   const [categories, setCategories] = useState<CategoryType[]>([])
   const [cityName, setCityName]     = useState<string>('')
@@ -207,50 +209,59 @@ export function ArticleFeed({ citySlug, categorySlug }: ArticleFeedProps) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="mb-6">
-        {currentCategory && (
-          <div className="hidden sm:flex items-center gap-2 text-sm text-gray-400 mb-2">
-            <Link href="/" className="hover:text-brand-600 transition-colors">Accueil</Link>
-            <span>/</span>
-            <Link href={`/${citySlug}`} className="hover:text-brand-600 transition-colors">{cityName || citySlug}</Link>
-            <span>/</span>
-            <span className="text-gray-700">{currentCategory.name}</span>
+      {!hideHeader && (
+        <div className="mb-6">
+          {currentCategory && (
+            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-400 mb-2">
+              <Link href="/" className="hover:text-brand-600 transition-colors">Accueil</Link>
+              <span>/</span>
+              <Link href={`/${citySlug}`} className="hover:text-brand-600 transition-colors">{cityName || citySlug}</Link>
+              <span>/</span>
+              <span className="text-gray-700">{currentCategory.name}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">
+              {currentCategory
+                ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
+                : cityName || citySlug}
+            </h1>
+            {userId && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Rafraîchir les sources"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+                <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
+              </button>
+            )}
           </div>
-        )}
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">
-            {currentCategory
-              ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
-              : cityName || citySlug}
-          </h1>
-          {userId && (
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              title="Rafraîchir les sources"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-gray-200 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-              <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
-            </button>
+          {refreshFeedback && (
+            <p className={cn('mt-2 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
+              {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
+            </p>
           )}
         </div>
-        {refreshFeedback && (
-          <p className={cn('mt-2 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
-            {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
-          </p>
-        )}
-      </div>
+      )}
+      {hideHeader && refreshFeedback && (
+        <p className={cn('mb-4 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
+          {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
+        </p>
+      )}
 
       {/* Main layout: calendar (desktop) + content */}
       <div className="flex gap-6 items-start">
         {/* Mini calendar — desktop only */}
-        <MiniCalendar
-          selected={dateRange ? dateRange.from : null}
-          onChange={handleCalendarSelect}
-          activeDates={activeDates}
-          onMonthChange={handleMonthChange}
-        />
+        {!hideMiniCalendar && (
+          <MiniCalendar
+            selected={dateRange ? dateRange.from : null}
+            onChange={handleCalendarSelect}
+            activeDates={activeDates}
+            onMonthChange={handleMonthChange}
+          />
+        )}
 
         {/* Right: filters + feed */}
         <div className="flex-1 min-w-0">
