@@ -30,12 +30,15 @@ Voici les ${articles.length} nouvel(s) article(s) importé(s) lors du dernier ra
 
 ${articleList}
 
-Rédige un résumé structuré, en français et ton journalistique sobre, en respectant exactement ce format :
-- Un titre "Résumé IA — ${cityName}".
-- Une section "Vue d'ensemble" (2 à 3 phrases).
-- Une section "Points clés" avec 3 à 6 puces synthétiques avec dates et heures.
+Rédige un résumé structuré, en français et ton journalistique sobre, en respectant exactement ce format HTML :
+- <h3>Résumé IA — ${cityName}</h3>
+- Un paragraphe <p> de "Vue d'ensemble" (2 à 3 phrases).
+- Une section "Points clés" sous forme de liste <ul> avec 3 à 6 éléments <li>.
 
-Ne liste pas les articles un par un : synthétise les thèmes et les informations clés.`
+Contraintes :
+- Retourne uniquement un fragment HTML valide (pas de Markdown, pas de blocs de code).
+- Utilise uniquement les balises suivantes : <h3>, <p>, <ul>, <li>, <strong>.
+- Ne liste pas les articles un par un : synthétise les thèmes et les informations clés.`
 
   return callLLM(prompt)
 }
@@ -62,13 +65,15 @@ Voici les ${articles.length} articles les plus récents actuellement en base de 
 
 ${articleList}
 
-Rédige un résumé détaillé jour par jour, en français et ton journalistique sobre, en respectant exactement ce format :
-- Un titre "Résumé IA quotidien — ${cityName}".
-- Une section "Vue d'ensemble" (3 à 5 phrases).
-- Une section "Jour par jour" avec un sous-titre pour chaque date présente dans les données (format JJ/MM/AAAA), du plus ancien au plus récent, et 1 à 3 puces par date.
-- Une section finale "À retenir" (2 à 4 puces) qui synthétise les tendances de la semaine.
+Rédige un résumé détaillé jour par jour, en français et ton journalistique sobre, en respectant exactement ce format HTML :
+- <h3>Résumé IA quotidien — ${cityName}</h3>
+- Un paragraphe <p> de "Vue d'ensemble" (3 à 5 phrases).
+- Une section jour par jour avec une date en <h3> (format JJ/MM/AAAA) puis une liste <ul> de 1 à 3 éléments <li> pour cette date, du plus ancien au plus récent.
+- Une section finale "À retenir" en <h3> suivie d'une liste <ul> de 2 à 4 éléments <li>.
 
 Contraintes :
+- Retourne uniquement un fragment HTML valide (pas de Markdown, pas de blocs de code).
+- Utilise uniquement les balises suivantes : <h3>, <p>, <ul>, <li>, <strong>.
 - Ne pas inventer d'information absente des données fournies.
 - Regrouper les sujets similaires par journée au lieu de répéter des titres d'articles.
 - Si une date n'a qu'un seul article, garder une synthèse concise mais factuelle.`
