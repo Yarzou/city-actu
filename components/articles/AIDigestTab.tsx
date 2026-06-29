@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -10,14 +10,60 @@ interface AIDigestTabProps {
 
 export function AIDigestTab({ citySlug }: AIDigestTabProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [initialLoading, setInitialLoading] = useState(true)
   const [digest, setDigest] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const [articleCount, setArticleCount] = useState<number | null>(null)
+  const [createdAt, setCreatedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadLatest() {
+      setInitialLoading(true)
+      setError(null)
+      setInfo(null)
+      try {
+        const res = await fetch(`/api/digest/${citySlug}/latest`)
+        const data = await res.json()
+
+        if (res.status === 401) {
+          setError('Vous devez être connecté pour consulter les résumés IA.')
+          setStatus('error')
+          return
+        }
+        if (!res.ok) {
+          setError(data.error ?? 'Erreur lors du chargement du dernier résumé.')
+          setStatus('error')
+          return
+        }
+
+        if (data.digest) {
+          setDigest(data.digest)
+          setArticleCount(data.articleCount ?? null)
+          setCreatedAt(data.createdAt ?? null)
+          setStatus('done')
+        } else {
+          setDigest(null)
+          setArticleCount(null)
+          setCreatedAt(null)
+          setStatus('idle')
+          setInfo(data.message ?? 'Aucun résumé à la demande disponible.')
+        }
+      } catch {
+        setError('Erreur réseau. Veuillez réessayer.')
+        setStatus('error')
+      } finally {
+        setInitialLoading(false)
+      }
+    }
+
+    void loadLatest()
+  }, [citySlug])
 
   async function generate() {
     setStatus('loading')
     setError(null)
-    setDigest(null)
+    setInfo(null)
 
     try {
       const res = await fetch(`/api/digest/${citySlug}`)
@@ -41,6 +87,7 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
 
       setDigest(data.digest)
       setArticleCount(data.articleCount ?? null)
+      setCreatedAt(data.createdAt ?? null)
       setStatus('done')
     } catch {
       setError('Erreur réseau. Veuillez réessayer.')
@@ -58,11 +105,11 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
           </div>
           <div>
             <h2 className="font-semibold text-gray-900">Résumé hebdomadaire IA</h2>
-            <p className="text-xs text-gray-500">Généré à partir des 7 derniers jours d&apos;actualité</p>
+            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré depuis les 7 derniers jours d&apos;actualité</p>
           </div>
         </div>
         <p className="text-sm text-gray-600 leading-relaxed mb-4">
-          Notre assistant IA analyse les derniers articles et vous propose une synthèse des grandes actualités locales.
+          Notre assistant IA affiche le dernier résumé enregistré et permet de le régénérer à la demande.
         </p>
         <button
           onClick={generate}
@@ -80,9 +127,21 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
       </div>
 
       {/* Result */}
+      {initialLoading && (
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+          Chargement du dernier résumé…
+        </div>
+      )}
+
       {status === 'error' && error && (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
           ❌ {error}
+        </div>
+      )}
+
+      {!initialLoading && status === 'idle' && info && (
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+          {info}
         </div>
       )}
 
@@ -93,9 +152,16 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
               <Sparkles className="size-3" />
               Résumé IA
             </span>
-            {articleCount !== null && (
-              <span className="text-xs text-gray-400">{articleCount} articles analysés</span>
-            )}
+            <div className="text-right">
+              {articleCount !== null && (
+                <p className="text-xs text-gray-400">{articleCount} articles analysés</p>
+              )}
+              {createdAt && (
+                <p className="text-xs text-gray-400">
+                  {new Date(createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                </p>
+              )}
+            </div>
           </div>
           <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">{digest}</p>
         </div>
