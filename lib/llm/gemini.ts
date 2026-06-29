@@ -68,7 +68,7 @@ ${articleList}
 Rédige un résumé détaillé jour par jour, en français et ton journalistique sobre, en respectant exactement ce format HTML :
 - <h3>Résumé IA quotidien — ${cityName}</h3>
 - Un paragraphe <p> de "Vue d'ensemble" (3 à 5 phrases).
-- Une section jour par jour avec une date en <h3> (format JJ/MM/AAAA) puis une liste <ul> de 1 à 3 éléments <li> pour cette date, du plus ancien au plus récent.
+- Une section jour par jour avec une date en <h3> (format JJ/MM/AAAA) puis une liste <ul> de 1 à 3 éléments <li> pour cette date, du plus récent au plus ancien (date la plus proche d'abord).
 - Une section finale "À retenir" en <h3> suivie d'une liste <ul> de 2 à 4 éléments <li>.
 
 Contraintes :
