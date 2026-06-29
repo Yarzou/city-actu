@@ -2,31 +2,99 @@ import * as cheerio from 'cheerio'
 import type { CheerioAPI } from 'cheerio'
 import type { Element } from 'domhandler'
 import { NextResponse } from 'next/server'
+import * as dns from 'node:dns/promises'
+import * as net from 'node:net'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminUser } from '@/lib/authz'
 import type { ScrapingConfig } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
-function isUrlSafe(urlStr: string): boolean {
+function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(Number.isNaN)) return true
+  if (parts[0] === 10) return true
+  if (parts[0] === 127) return true
+  if (parts[0] === 0) return true
+  if (parts[0] === 169 && parts[1] === 254) return true
+  if (parts[0] === 192 && parts[1] === 168) return true
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true
+  return false
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase()
+  return (
+    normalized === '::1' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80:') ||
+    normalized === '::' ||
+    normalized.startsWith('::ffff:127.') ||
+    normalized.startsWith('::ffff:10.') ||
+    normalized.startsWith('::ffff:192.168.') ||
+    /^::ffff:172\.(1[6-9]|2\d|3[01])\./.test(normalized)
+  )
+}
+
+function isPrivateIp(ip: string): boolean {
+  const family = net.isIP(ip)
+  if (family === 4) return isPrivateIPv4(ip)
+  if (family === 6) return isPrivateIPv6(ip)
+  return true
+}
+
+async function isTargetUrlSafe(urlStr: string): Promise<boolean> {
+  let url: URL
   try {
-    const url = new URL(urlStr)
-    if (!['http:', 'https:'].includes(url.protocol)) return false
-    const host = url.hostname.toLowerCase()
-    const blocked = [
-      /^localhost$/,
-      /^127\./,
-      /^10\./,
-      /^192\.168\./,
-      /^172\.(1[6-9]|2\d|3[01])\./,
-      /^169\.254\./,
-      /^::1$/,
-      /^0\./,
-      /^metadata\.google\.internal$/,
-    ]
-    return !blocked.some(p => p.test(host))
+    url = new URL(urlStr)
   } catch {
     return false
   }
+  if (!['http:', 'https:'].includes(url.protocol)) return false
+
+  const host = url.hostname.toLowerCase()
+  if (host === 'localhost' || host === 'metadata.google.internal') return false
+
+  const hostIpFamily = net.isIP(host)
+  if (hostIpFamily > 0) return !isPrivateIp(host)
+
+  try {
+    const resolved = await dns.lookup(host, { all: true })
+    if (!resolved.length) return false
+    return resolved.every(entry => !isPrivateIp(entry.address))
+  } catch {
+    return false
+  }
+}
+
+async function fetchWithSafeRedirects(url: string, maxRedirects = 3): Promise<Response> {
+  let current = url
+  for (let i = 0; i <= maxRedirects; i++) {
+    if (!(await isTargetUrlSafe(current))) {
+      throw new Error('URL invalide ou non autorisée')
+    }
+
+    const res = await fetch(current, {
+      headers: {
+        'User-Agent': 'VilleActu/1.0 (agregateur actualites locales)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(15_000),
+      redirect: 'manual',
+    })
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location')
+      if (!location) throw new Error('Redirection invalide')
+      current = new URL(location, current).toString()
+      continue
+    }
+
+    return res
+  }
+
+  throw new Error('Trop de redirections')
 }
 
 function detectSelectors(
@@ -149,6 +217,9 @@ export async function POST(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
+  if (!(await isAdminUser(supabase, user.id))) {
+    return NextResponse.json({ error: 'Accès administrateur requis' }, { status: 403 })
+  }
 
   let url: string
   try {
@@ -158,19 +229,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Corps invalide' }, { status: 400 })
   }
 
-  if (!url || typeof url !== 'string' || !isUrlSafe(url)) {
+  if (!url || typeof url !== 'string' || !(await isTargetUrlSafe(url))) {
     return NextResponse.json({ error: 'URL invalide ou non autorisée' }, { status: 400 })
   }
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'VilleActu/1.0 (agregateur actualites locales)',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      signal: AbortSignal.timeout(15_000),
-      redirect: 'follow',
-    })
+    const res = await fetchWithSafeRedirects(url)
 
     if (!res.ok) return NextResponse.json({ error: `Erreur HTTP ${res.status}` }, { status: 422 })
 

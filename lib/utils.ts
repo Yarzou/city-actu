@@ -66,12 +66,19 @@ export function formatDayHeader(dateKey: string): string {
 }
 
 function sanitizeHtml(input: string): string {
-  return input
+  const withoutDangerousBlocks = input
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/\son\w+='[^']*'/gi, '')
-    .replace(/javascript:/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  const allowedTags = new Set(['h3', 'p', 'ul', 'li', 'strong', 'br'])
+
+  return withoutDangerousBlocks.replace(/<\/?([a-zA-Z0-9]+)(?:\s[^>]*)?>/g, (fullMatch, tagName) => {
+    const safeTag = String(tagName).toLowerCase()
+    if (!allowedTags.has(safeTag)) return ''
+    const isClosing = fullMatch.startsWith('</')
+    return isClosing ? `</${safeTag}>` : `<${safeTag}>`
+  })
 }
 
 function escapeHtml(input: string): string {

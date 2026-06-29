@@ -24,6 +24,7 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
   const [tab, setTab] = useState<Tab>('actus')
   const [cityName, setCityName] = useState<string>('')
   const [userId, setUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
 
@@ -36,6 +37,13 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
       ])
       if (city) setCityName(city.name)
       setUserId(user?.id ?? null)
+      if (user) {
+        const adminRes = await fetch('/api/admin/me')
+        const adminData = await adminRes.json().catch(() => ({ isAdmin: false }))
+        setIsAdmin(Boolean(adminData.isAdmin))
+      } else {
+        setIsAdmin(false)
+      }
     }
     init()
   }, [citySlug])
@@ -68,7 +76,7 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
           {cityName || citySlug}
         </h1>
-        {userId && (
+        {userId && isAdmin && (
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -109,6 +117,7 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
       {tab === 'actus' && (
         <ArticleFeed
           citySlug={citySlug}
+          canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar
         />

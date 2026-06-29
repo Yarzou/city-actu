@@ -38,11 +38,12 @@ function sortByProximity(items: ArticleType[]): ArticleType[] {
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
+  canManageContent?: boolean
   hideHeader?: boolean
   hideMiniCalendar?: boolean
 }
 
-export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMiniCalendar = false }: ArticleFeedProps) {
+export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false }: ArticleFeedProps) {
   const [articles, setArticles]     = useState<ArticleType[]>([])
   const [categories, setCategories] = useState<CategoryType[]>([])
   const [cityName, setCityName]     = useState<string>('')
@@ -180,6 +181,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
   }
 
   async function handleRefresh() {
+    if (!canManageContent) return
     setRefreshing(true)
     setRefreshFeedback(null)
     try {
@@ -205,7 +207,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
   }
 
   async function handleDeleteArticle(articleId: number) {
-    if (!userId) {
+    if (!userId || !canManageContent) {
       setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
       return
     }
@@ -262,7 +264,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
                 ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
                 : cityName || citySlug}
             </h1>
-            {userId && (
+            {userId && canManageContent && (
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
@@ -362,7 +364,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
                         article={article}
                         userId={userId}
                         isFavorited={favorites.has(article.id)}
-                        canDelete={Boolean(userId)}
+                        canDelete={Boolean(userId && canManageContent)}
                         deleting={deletingArticleId === article.id}
                         onDelete={handleDeleteArticle}
                       />
@@ -393,7 +395,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
                     article={article}
                     userId={userId}
                     isFavorited={favorites.has(article.id)}
-                    canDelete={Boolean(userId)}
+                    canDelete={Boolean(userId && canManageContent)}
                     deleting={deletingArticleId === article.id}
                     onDelete={handleDeleteArticle}
                   />

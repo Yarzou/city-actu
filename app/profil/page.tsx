@@ -15,6 +15,7 @@ export default function ProfilPage() {
   const [tab, setTab]             = useState<'favorites' | 'admin'>('favorites')
   const [userId, setUserId]       = useState<string | null>(null)
   const [email, setEmail]         = useState<string | null>(null)
+  const [isAdmin, setIsAdmin]     = useState(false)
   const [favorites, setFavorites] = useState<ArticleType[]>([])
   const [loading, setLoading]     = useState(true)
 
@@ -27,6 +28,10 @@ export default function ProfilPage() {
 
       setUserId(user.id)
       setEmail(user.email ?? null)
+
+      const adminRes = await fetch('/api/admin/me')
+      const adminData = await adminRes.json().catch(() => ({ isAdmin: false }))
+      setIsAdmin(Boolean(adminData.isAdmin))
 
       const { data: favs } = await supabase
         .from('user_favorites')
@@ -79,7 +84,7 @@ export default function ProfilPage() {
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {[
           { id: 'favorites', label: 'Favoris', icon: <Heart className="size-4" />, count: favorites.length },
-          { id: 'admin',     label: 'Admin',   icon: <Settings className="size-4" />, count: 0 },
+          ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: <Settings className="size-4" />, count: 0 }] : []),
         ].map(({ id, label, icon, count }) => (
           <button
             key={id}
@@ -118,8 +123,7 @@ export default function ProfilPage() {
           </div>
         )
       )}
-      {tab === 'admin' && <AdminSourcesPanel />}
+      {tab === 'admin' && isAdmin && <AdminSourcesPanel />}
     </div>
   )
 }
-

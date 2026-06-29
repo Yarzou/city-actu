@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
 
@@ -12,6 +13,9 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
+  }
+  if (!(await isAdminUser(supabase, user.id))) {
+    return NextResponse.json({ error: 'Accès administrateur requis' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => ({}))

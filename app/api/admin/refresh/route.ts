@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
 import { summarizeArticles } from '@/lib/llm/gemini'
+import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -20,6 +21,9 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
+  }
+  if (!(await isAdminUser(supabase, user.id))) {
+    return NextResponse.json({ error: 'Accès administrateur requis' }, { status: 403 })
   }
 
   let sourceId: number | undefined

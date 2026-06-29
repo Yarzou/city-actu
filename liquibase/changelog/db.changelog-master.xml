@@ -26,4 +26,10 @@
   <!-- Table import_summaries : historique des résumés IA -->
   <include file="liquibase/changelog/007-import-summaries.sql"/>
 
+  <!-- Rôle admin via profiles.is_admin -->
+  <include file="liquibase/changelog/008-admin-roles.sql"/>
+
+  <!-- Promotion one-shot des utilisateurs existants en admin -->
+  <include file="liquibase/changelog/009-promote-existing-users-admin.sql"/>
+
 </databaseChangeLog>

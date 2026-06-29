@@ -112,3 +112,25 @@ VALUES (1, 2, 'Agenda local', 'https://...', 'scraping', true,
 | `CRON_SECRET` | Secret pour sécuriser `/api/cron/fetch-news` |
 | `GMAIL_USER` | Email Gmail expéditeur (SMTP) |
 | `GMAIL_APP_PASSWORD` | Mot de passe d'application Gmail (SMTP) |
+
+## Gestion des admins (sans variables d'environnement)
+
+Les accès admin sont pilotés en base via `profiles.is_admin`.
+
+Promouvoir un utilisateur :
+
+```sql
+UPDATE profiles
+SET is_admin = true
+WHERE id = 'UUID_UTILISATEUR';
+```
+
+Ou par email :
+
+```sql
+UPDATE profiles p
+SET is_admin = true
+FROM auth.users u
+WHERE p.id = u.id
+  AND lower(u.email) = 'admin@exemple.fr';
+```
