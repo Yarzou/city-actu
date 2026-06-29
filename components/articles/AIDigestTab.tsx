@@ -10,6 +10,7 @@ interface AIDigestTabProps {
 
 export function AIDigestTab({ citySlug }: AIDigestTabProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [sendingEmail, setSendingEmail] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [digest, setDigest] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +96,41 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
     }
   }
 
+  async function sendByEmail() {
+    if (!digest) return
+    setSendingEmail(true)
+    setInfo(null)
+    setError(null)
+
+    try {
+      const res = await fetch(`/api/digest/${citySlug}/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          digest,
+          articleCount,
+          createdAt,
+        }),
+      })
+      const data = await res.json()
+
+      if (res.status === 401) {
+        setError('Vous devez être connecté pour envoyer le résumé par email.')
+        return
+      }
+      if (!res.ok) {
+        setError(data.error ?? 'Erreur lors de l’envoi email.')
+        return
+      }
+
+      setInfo('Résumé IA envoyé par email.')
+    } catch {
+      setError('Erreur réseau. Veuillez réessayer.')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-1 py-6">
       {/* Intro card */}
@@ -124,6 +160,20 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
           <RefreshCw className={cn('size-4', status === 'loading' && 'animate-spin')} />
           {status === 'loading' ? 'Génération en cours…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
         </button>
+        {status === 'done' && digest && (
+          <button
+            onClick={sendByEmail}
+            disabled={sendingEmail}
+            className={cn(
+              'ml-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+              sendingEmail
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-brand-700 border border-brand-200 hover:bg-brand-50'
+            )}
+          >
+            {sendingEmail ? 'Envoi…' : 'Envoyer par mail'}
+          </button>
+        )}
       </div>
 
       {/* Result */}

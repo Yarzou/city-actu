@@ -110,4 +110,5 @@ VALUES (1, 2, 'Agenda local', 'https://...', 'scraping', true,
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé anon publique |
 | `SUPABASE_SERVICE_ROLE_KEY` | Clé service role (cron) |
 | `CRON_SECRET` | Secret pour sécuriser `/api/cron/fetch-news` |
-
+| `GMAIL_USER` | Email Gmail expéditeur (SMTP) |
+| `GMAIL_APP_PASSWORD` | Mot de passe d'application Gmail (SMTP) |
