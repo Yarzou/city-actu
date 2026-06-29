@@ -6,6 +6,7 @@ export interface ArticleSnippet {
 
 interface SummaryOptions {
   cityName?: string
+  todayDateLabel?: string
 }
 
 /**
@@ -50,16 +51,25 @@ Contraintes :
 export async function summarizeRecentArticles(articles: ArticleSnippet[], options: SummaryOptions = {}): Promise<string | null> {
   if (articles.length === 0) return null
   const cityName = options.cityName ?? 'la ville concernée'
+  const todayDateLabel = options.todayDateLabel ?? new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date())
 
   const articleList = articles
     .map((a, i) => {
       const preview = a.content_preview?.trim() ? ` — ${a.content_preview.slice(0, 120)}` : ''
-      const day = a.published_at ? new Date(a.published_at).toLocaleDateString('fr-FR') : 'Date non précisée'
+      const day = a.published_at
+        ? new Date(a.published_at).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })
+        : 'Date non précisée'
       return `${i + 1}. [${day}] ${a.title}${preview}`
     })
     .join('\n')
 
   const prompt = `Tu es un assistant éditorial pour un journal local de ${cityName} (France).
+Date de référence (aujourd'hui, fuseau Europe/Paris) : ${todayDateLabel}.
 
 Voici les ${articles.length} articles de la semaine calendaire en cours actuellement en base de données :
 
@@ -76,7 +86,8 @@ Contraintes :
 - Utilise uniquement les balises suivantes : <h3>, <p>, <ul>, <li>, <strong>.
 - Ne pas inventer d'information absente des données fournies.
 - Regrouper les sujets similaires par journée au lieu de répéter des titres d'articles.
-- Si une date n'a qu'un seul article, garder une synthèse concise mais factuelle.`
+- Si une date n'a qu'un seul article, garder une synthèse concise mais factuelle.
+- Si l'information concerne la date ${todayDateLabel}, privilégie la formulation "aujourd'hui" dans le texte au lieu de répéter la date littérale.`
 
   return callLLM(prompt)
 }

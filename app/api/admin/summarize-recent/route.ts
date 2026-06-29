@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { summarizeRecentArticles } from '@/lib/llm/gemini'
-import { getCurrentParisWeekMondayUtcIso } from '@/lib/week'
+import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso } from '@/lib/week'
 import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
@@ -67,7 +67,10 @@ export async function POST(request: Request) {
     published_at: (a.published_at as string | null) ?? (a.fetched_at as string | null) ?? undefined,
   }))
 
-  const aiSummary = await summarizeRecentArticles(snippets, { cityName })
+  const aiSummary = await summarizeRecentArticles(snippets, {
+    cityName,
+    todayDateLabel: getCurrentParisDateLabel(),
+  })
 
   if (!aiSummary) {
     return NextResponse.json(

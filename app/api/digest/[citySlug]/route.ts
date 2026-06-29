@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { summarizeRecentArticles } from '@/lib/llm/gemini'
-import { getCurrentParisWeekMondayUtcIso } from '@/lib/week'
+import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso } from '@/lib/week'
 
 interface RouteParams {
   params: Promise<{ citySlug: string }>
@@ -50,7 +50,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
       content_preview: (article.content_preview as string | null) ?? undefined,
       published_at: (article.published_at as string | null) ?? (article.fetched_at as string | null) ?? undefined,
     })),
-    { cityName: city.name }
+    {
+      cityName: city.name,
+      todayDateLabel: getCurrentParisDateLabel(),
+    }
   )
   if (!digest) {
     return Response.json({ error: 'Échec de la génération du résumé.' }, { status: 500 })

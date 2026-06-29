@@ -51,3 +51,12 @@ export function getCurrentParisWeekMondayUtcIso(now = new Date()): string {
   const mondayDay = currentDay.getUTCDate()
   return parisMidnightToUtc(mondayYear, mondayMonth, mondayDay).toISOString()
 }
+
+export function getCurrentParisDateLabel(now = new Date()): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: PARIS_TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(now)
+}
