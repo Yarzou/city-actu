@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
@@ -466,7 +466,10 @@ export function AdminSourcesPanel() {
       {aiSummary && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-4 text-sm text-purple-900">
           <p className="font-semibold text-purple-700 mb-1">✨ Synthèse IA</p>
-          <p className="leading-relaxed">{aiSummary}</p>
+          <div
+            className="leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-purple-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
+            dangerouslySetInnerHTML={{ __html: formatDigestHtml(aiSummary) }}
+          />
         </div>
       )}
 
@@ -505,7 +508,10 @@ export function AdminSourcesPanel() {
                     </span>
                     <span>{s.articles_count} article(s)</span>
                   </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">{s.summary_text}</p>
+                  <div
+                    className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
+                    dangerouslySetInnerHTML={{ __html: formatDigestHtml(s.summary_text) }}
+                  />
                 </div>
               ))}
             </div>
@@ -1126,7 +1132,7 @@ function ScrapingConfigFields({
         <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Sélecteur date sur page détail
-            <span className="text-gray-400 font-normal ml-1">(si les dates sont absentes de la liste — format "Du X au Y mois")</span>
+            <span className="text-gray-400 font-normal ml-1">(si les dates sont absentes de la liste — format &quot;Du X au Y mois&quot;)</span>
           </label>
           <input value={config.detail_date_selector ?? ''}
             onChange={e => onChange({ ...config, detail_date_selector: e.target.value })}

@@ -64,3 +64,34 @@ export function formatDayHeader(dateKey: string): string {
   if (isTomorrow(date)) return `Demain – ${format(date, 'EEEE d MMMM', { locale: fr })}`
   return format(date, 'EEEE d MMMM yyyy', { locale: fr })
 }
+
+function sanitizeHtml(input: string): string {
+  return input
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/javascript:/gi, '')
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function formatDigestHtml(input: string): string {
+  const trimmed = input.trim()
+  const looksLikeHtml = /<\s*(h3|p|ul|li|strong)\b/i.test(trimmed)
+  if (looksLikeHtml) return sanitizeHtml(trimmed)
+
+  // Backward compatibility for older markdown-like summaries already stored.
+  const fallbackHtml = escapeHtml(trimmed)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br />')
+
+  return `<p>${fallbackHtml}</p>`
+}

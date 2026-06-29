@@ -2,41 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDigestHtml } from '@/lib/utils'
 
 interface AIDigestTabProps {
   citySlug: string
-}
-
-function sanitizeHtml(input: string): string {
-  return input
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/\son\w+='[^']*'/gi, '')
-    .replace(/javascript:/gi, '')
-}
-
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function formatDigestHtml(input: string): string {
-  const trimmed = input.trim()
-  const looksLikeHtml = /<\s*(h3|p|ul|li|strong)\b/i.test(trimmed)
-  if (looksLikeHtml) return sanitizeHtml(trimmed)
-
-  // Backward compatibility for previously stored markdown-like summaries.
-  const fallbackHtml = escapeHtml(trimmed)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br />')
-
-  return `<p>${fallbackHtml}</p>`
 }
 
 export function AIDigestTab({ citySlug }: AIDigestTabProps) {
