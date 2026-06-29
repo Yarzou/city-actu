@@ -23,6 +23,7 @@ export async function POST(request: Request) {
 
   let limit = 10
   let cityId: number | undefined
+  let cityName: string | undefined
   try {
     const body = await request.json().catch(() => ({}))
     if (body.limit) limit = Math.min(Number(body.limit), 30)
@@ -41,13 +42,18 @@ export async function POST(request: Request) {
   // Fetch articles from current week, non-duplicate
   let query = service
     .from('articles')
-    .select('title, content_preview, city_id')
+    .select('title, content_preview, city_id, published_at, fetched_at')
     .eq('is_duplicate', false)
     .gte('published_at', monday.toISOString())
     .order('published_at', { ascending: false })
     .limit(limit)
 
   if (cityId) query = query.eq('city_id', cityId)
+
+  if (cityId) {
+    const { data: city } = await service.from('cities').select('name').eq('id', cityId).single()
+    cityName = city?.name
+  }
 
   const { data: articles, error } = await query
 
@@ -58,9 +64,10 @@ export async function POST(request: Request) {
   const snippets = articles.map(a => ({
     title: a.title as string,
     content_preview: (a.content_preview as string | null) ?? undefined,
+    published_at: (a.published_at as string | null) ?? (a.fetched_at as string | null) ?? undefined,
   }))
 
-  const aiSummary = await summarizeRecentArticles(snippets)
+  const aiSummary = await summarizeRecentArticles(snippets, { cityName })
 
   if (!aiSummary) {
     return NextResponse.json(
