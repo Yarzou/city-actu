@@ -68,12 +68,12 @@ export async function GET(_request: Request, { params }: RouteParams) {
       articles_count: articles.length,
       source: 'on_demand',
     })
-    .select('created_at')
+    .select('id, created_at')
     .single()
 
   if (insertError) {
     return Response.json({ error: `Échec de l'enregistrement du résumé: ${insertError.message}` }, { status: 500 })
   }
 
-  return Response.json({ digest, articleCount: articles.length, createdAt: inserted.created_at })
+  return Response.json({ id: inserted.id, digest, articleCount: articles.length, createdAt: inserted.created_at })
 }

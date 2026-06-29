@@ -107,10 +107,11 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(article.id) }}
                 disabled={deleting}
-                className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
                 title="Supprimer cette actu"
               >
                 <Trash2 className={cn('size-4', deleting && 'animate-pulse')} />
+                <span className="text-xs sm:hidden">Supprimer</span>
               </button>
             )}
             <a

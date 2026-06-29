@@ -123,7 +123,7 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
         />
       )}
       {tab === 'favoris' && <FavoritesTab citySlug={citySlug} />}
-      {tab === 'ia' && <AIDigestTab citySlug={citySlug} />}
+      {tab === 'ia' && <AIDigestTab citySlug={citySlug} canManageContent={isAdmin} />}
     </div>
   )
 }
