@@ -3,16 +3,25 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AdminSourcesPanel } from '@/components/admin/AdminSourcesPanel'
+import { createClient } from '@/lib/supabase/client'
+import { resolveAdminStatusClient } from '@/lib/admin-client'
 
 export default function AdminSourcesPage() {
   const router = useRouter()
   const [canAccess, setCanAccess] = useState<boolean | null>(null)
 
   useEffect(() => {
+    const supabase = createClient()
+
     async function checkAccess() {
-      const res = await fetch('/api/admin/me')
-      const data = await res.json().catch(() => ({ isAdmin: false }))
-      if (!data.isAdmin) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.replace('/auth/login')
+        return
+      }
+
+      const isAdmin = await resolveAdminStatusClient(supabase, user.id)
+      if (!isAdmin) {
         router.replace('/profil')
         return
       }

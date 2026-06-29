@@ -7,6 +7,7 @@ import { ArticleFeed } from './ArticleFeed'
 import { FavoritesTab } from './FavoritesTab'
 import { AIDigestTab } from './AIDigestTab'
 import { cn } from '@/lib/utils'
+import { resolveAdminStatusClient } from '@/lib/admin-client'
 
 type Tab = 'actus' | 'favoris' | 'ia'
 
@@ -38,9 +39,8 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
       if (city) setCityName(city.name)
       setUserId(user?.id ?? null)
       if (user) {
-        const adminRes = await fetch('/api/admin/me')
-        const adminData = await adminRes.json().catch(() => ({ isAdmin: false }))
-        setIsAdmin(Boolean(adminData.isAdmin))
+        const admin = await resolveAdminStatusClient(supabase, user.id)
+        setIsAdmin(admin)
       } else {
         setIsAdmin(false)
       }

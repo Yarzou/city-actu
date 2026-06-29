@@ -9,6 +9,7 @@ import { LogOut, Heart, Settings } from 'lucide-react'
 import { AdminSourcesPanel } from '@/components/admin/AdminSourcesPanel'
 import type { Article as ArticleType } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { resolveAdminStatusClient } from '@/lib/admin-client'
 
 export default function ProfilPage() {
   const router = useRouter()
@@ -29,9 +30,8 @@ export default function ProfilPage() {
       setUserId(user.id)
       setEmail(user.email ?? null)
 
-      const adminRes = await fetch('/api/admin/me')
-      const adminData = await adminRes.json().catch(() => ({ isAdmin: false }))
-      setIsAdmin(Boolean(adminData.isAdmin))
+      const admin = await resolveAdminStatusClient(supabase, user.id)
+      setIsAdmin(admin)
 
       const { data: favs } = await supabase
         .from('user_favorites')
