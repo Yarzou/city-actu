@@ -33,7 +33,7 @@ ${articleList}
 Rédige un résumé structuré, en français et ton journalistique sobre, en respectant exactement ce format HTML :
 - <h3>Résumé IA — ${cityName}</h3>
 - Un paragraphe <p> de "Vue d'ensemble" (2 à 3 phrases).
-- Une section "Points clés" sous forme de liste <ul> avec 3 à 6 éléments <li>.
+- Une section "Points clés" sous forme de liste <ul> avec 3 à 6 éléments avec date et heure éventuellement<li>.
 
 Contraintes :
 - Retourne uniquement un fragment HTML valide (pas de Markdown, pas de blocs de code).
