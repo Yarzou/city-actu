@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, RefreshCw, Trash2 } from 'lucide-react'
+import { Sparkles, RefreshCw, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -29,6 +29,7 @@ export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabP
   const [summaries, setSummaries] = useState<DigestSummary[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(true)
   const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null)
   const [summaryToDelete, setSummaryToDelete] = useState<DigestSummary | null>(null)
 
@@ -315,54 +316,66 @@ export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabP
       )}
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <p className="text-sm font-medium text-gray-700">
+        <button
+          onClick={() => setHistoryOpen((open) => !open)}
+          className="w-full flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors"
+        >
+          <p className="text-sm font-medium text-gray-700 text-left">
             Historique des résumés IA ({summaries.length})
           </p>
-        </div>
+          {historyOpen ? (
+            <ChevronUp className="size-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="size-4 text-gray-500" />
+          )}
+        </button>
 
-        {historyLoading ? (
-          <div className="px-4 py-4 text-sm text-gray-500">Chargement de l’historique…</div>
-        ) : historyError ? (
-          <div className="px-4 py-4 text-sm text-red-700">❌ {historyError}</div>
-        ) : summaries.length === 0 ? (
-          <div className="px-4 py-4 text-sm text-gray-500">Aucun résumé IA disponible.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {summaries.map((summary) => (
-              <div key={summary.id} className="px-4 py-4">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-400">
-                      {new Date(summary.createdAt).toLocaleDateString('fr-FR', {
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                    <p className="text-xs text-gray-500">{summary.articleCount} article(s)</p>
+        {historyOpen && (
+          <>
+            {historyLoading ? (
+              <div className="px-4 py-4 text-sm text-gray-500">Chargement de l’historique…</div>
+            ) : historyError ? (
+              <div className="px-4 py-4 text-sm text-red-700">❌ {historyError}</div>
+            ) : summaries.length === 0 ? (
+              <div className="px-4 py-4 text-sm text-gray-500">Aucun résumé IA disponible.</div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {summaries.map((summary) => (
+                  <div key={summary.id} className="px-4 py-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-400">
+                          {new Date(summary.createdAt).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                        <p className="text-xs text-gray-500">{summary.articleCount} article(s)</p>
+                      </div>
+                      {canManageContent && (
+                        <button
+                          onClick={() => setSummaryToDelete(summary)}
+                          disabled={deletingSummaryId === summary.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                          title="Supprimer ce résumé"
+                        >
+                          <Trash2 className={cn('size-3.5', deletingSummaryId === summary.id && 'animate-pulse')} />
+                          Supprimer
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
+                      dangerouslySetInnerHTML={{ __html: formatDigestHtml(summary.digest) }}
+                    />
                   </div>
-                  {canManageContent && (
-                    <button
-                      onClick={() => setSummaryToDelete(summary)}
-                      disabled={deletingSummaryId === summary.id}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
-                      title="Supprimer ce résumé"
-                    >
-                      <Trash2 className={cn('size-3.5', deletingSummaryId === summary.id && 'animate-pulse')} />
-                      Supprimer
-                    </button>
-                  )}
-                </div>
-                <div
-                  className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
-                  dangerouslySetInnerHTML={{ __html: formatDigestHtml(summary.digest) }}
-                />
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 

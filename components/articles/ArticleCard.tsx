@@ -111,7 +111,6 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
                 title="Supprimer cette actu"
               >
                 <Trash2 className={cn('size-4', deleting && 'animate-pulse')} />
-                <span className="text-xs sm:hidden">Supprimer</span>
               </button>
             )}
             <a
