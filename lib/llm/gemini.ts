@@ -61,7 +61,7 @@ export async function summarizeRecentArticles(articles: ArticleSnippet[], option
 
   const prompt = `Tu es un assistant éditorial pour un journal local de ${cityName} (France).
 
-Voici les ${articles.length} articles les plus récents actuellement en base de données :
+Voici les ${articles.length} articles de la semaine calendaire en cours actuellement en base de données :
 
 ${articleList}
 

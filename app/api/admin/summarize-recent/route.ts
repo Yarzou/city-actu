@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { summarizeRecentArticles } from '@/lib/llm/gemini'
+import { getCurrentParisWeekMondayUtcIso } from '@/lib/week'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -32,19 +33,14 @@ export async function POST(request: Request) {
 
   const service = getServiceClient()
 
-  // Compute start of current week (Monday 00:00:00)
-  const now = new Date()
-  const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1 // Mon=0 … Sun=6
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - dayOfWeek)
-  monday.setHours(0, 0, 0, 0)
+  const mondayUtcIso = getCurrentParisWeekMondayUtcIso()
 
   // Fetch articles from current week, non-duplicate
   let query = service
     .from('articles')
     .select('title, content_preview, city_id, published_at, fetched_at')
     .eq('is_duplicate', false)
-    .gte('published_at', monday.toISOString())
+    .gte('published_at', mondayUtcIso)
     .order('published_at', { ascending: false })
     .limit(limit)
 

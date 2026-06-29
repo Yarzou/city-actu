@@ -141,7 +141,7 @@ export function AIDigestTab({ citySlug }: AIDigestTabProps) {
           </div>
           <div>
             <h2 className="font-semibold text-gray-900">Résumé hebdomadaire IA</h2>
-            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré depuis les 7 derniers jours d&apos;actualité</p>
+            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré sur la semaine en cours (lundi à dimanche)</p>
           </div>
         </div>
         <p className="text-sm text-gray-600 leading-relaxed mb-4">

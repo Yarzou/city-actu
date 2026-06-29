@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { summarizeRecentArticles } from '@/lib/llm/gemini'
-import { subDays } from 'date-fns'
+import { getCurrentParisWeekMondayUtcIso } from '@/lib/week'
 
 interface RouteParams {
   params: Promise<{ citySlug: string }>
@@ -29,15 +29,15 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return Response.json({ error: 'Ville introuvable' }, { status: 404 })
   }
 
-  const since = subDays(new Date(), 7).toISOString()
+  const mondayUtcIso = getCurrentParisWeekMondayUtcIso()
 
   const { data: articles } = await supabase
     .from('articles')
     .select('title, content_preview, published_at, fetched_at')
     .eq('city_id', city.id)
     .eq('is_duplicate', false)
-    .gte('fetched_at', since)
-    .order('fetched_at', { ascending: false })
+    .gte('published_at', mondayUtcIso)
+    .order('published_at', { ascending: false })
     .limit(40)
 
   if (!articles || articles.length === 0) {
