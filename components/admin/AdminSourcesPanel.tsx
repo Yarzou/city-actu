@@ -43,6 +43,8 @@ export function AdminSourcesPanel() {
   const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [importSummaries, setImportSummaries] = useState<ImportSummary[]>([])
   const [showSummaryHistory, setShowSummaryHistory] = useState(false)
+  const [summarySourceFilter, setSummarySourceFilter] = useState<'all' | 'on_demand' | 'refresh'>('all')
+  const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null)
   const [summarizingRecent, setSummarizingRecent] = useState(false)
   const [summarizeError, setSummarizeError] = useState<string | null>(null)
   const [editingConfig, setEditingConfig] = useState<number | null>(null)
@@ -395,6 +397,38 @@ export function AdminSourcesPanel() {
     setSummarizingRecent(false)
   }
 
+  async function deleteImportSummary(id: number) {
+    askConfirm(
+      'Supprimer le résumé IA',
+      'Supprimer ce résumé de l’historique ? Cette action est irréversible.',
+      'Supprimer',
+      async () => {
+        closeConfirm()
+        setDeletingSummaryId(id)
+        try {
+          const res = await fetch('/api/admin/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: 'import_summaries', id }),
+          })
+          const data = await res.json()
+          if (!res.ok || !data.ok) {
+            setSummarizeError(data.error ?? 'Erreur lors de la suppression du résumé')
+          } else {
+            setImportSummaries(prev => prev.filter(summary => summary.id !== id))
+          }
+        } catch {
+          setSummarizeError('Erreur réseau')
+        }
+        setDeletingSummaryId(null)
+      }
+    )
+  }
+
+  const filteredSummaries = importSummaries.filter((summary) => (
+    summarySourceFilter === 'all' ? true : summary.source === summarySourceFilter
+  ))
+
   if (loading) return <div className="py-8 text-gray-400 text-sm">Chargement…</div>
 
   return (
@@ -496,17 +530,65 @@ export function AdminSourcesPanel() {
           </button>
           {showSummaryHistory && (
             <div className="divide-y divide-gray-100">
-              {importSummaries.map(s => (
+              <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-500">Filtrer :</span>
+                <button
+                  onClick={() => setSummarySourceFilter('all')}
+                  className={cn(
+                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
+                    summarySourceFilter === 'all'
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  Tous
+                </button>
+                <button
+                  onClick={() => setSummarySourceFilter('on_demand')}
+                  className={cn(
+                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
+                    summarySourceFilter === 'on_demand'
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
+                  )}
+                >
+                  À la demande
+                </button>
+                <button
+                  onClick={() => setSummarySourceFilter('refresh')}
+                  className={cn(
+                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
+                    summarySourceFilter === 'refresh'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                  )}
+                >
+                  Refresh
+                </button>
+                <span className="text-xs text-gray-400">{filteredSummaries.length} résultat(s)</span>
+              </div>
+              {filteredSummaries.map(s => (
                 <div key={s.id} className="px-4 py-3 bg-white">
-                  <div className="flex items-center gap-2 mb-1 text-xs text-gray-400">
-                    <span>{new Date(s.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                    <span className={cn(
-                      'px-1.5 py-0.5 rounded-full font-medium',
-                      s.source === 'refresh' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'
-                    )}>
-                      {s.source === 'refresh' ? 'Refresh' : 'À la demande'}
-                    </span>
-                    <span>{s.articles_count} article(s)</span>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                      <span>{new Date(s.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className={cn(
+                        'px-1.5 py-0.5 rounded-full font-medium',
+                        s.source === 'refresh' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'
+                      )}>
+                        {s.source === 'refresh' ? 'Refresh' : 'À la demande'}
+                      </span>
+                      <span>{s.articles_count} article(s)</span>
+                    </div>
+                    <button
+                      onClick={() => deleteImportSummary(s.id)}
+                      disabled={deletingSummaryId === s.id}
+                      title="Supprimer ce résumé"
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                    >
+                      <Trash2 className={cn('size-3.5', deletingSummaryId === s.id && 'animate-pulse')} />
+                      Supprimer
+                    </button>
                   </div>
                   <div
                     className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
@@ -514,6 +596,11 @@ export function AdminSourcesPanel() {
                   />
                 </div>
               ))}
+              {filteredSummaries.length === 0 && (
+                <div className="px-4 py-6 text-sm text-gray-500 bg-white">
+                  Aucun résumé IA pour ce filtre.
+                </div>
+              )}
             </div>
           )}
         </div>

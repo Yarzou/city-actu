@@ -2,7 +2,7 @@
 
 import { useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '@/lib/types'
 import type { Article } from '@/lib/types'
@@ -12,9 +12,12 @@ interface ArticleCardProps {
   article: Article
   userId?: string | null
   isFavorited?: boolean
+  canDelete?: boolean
+  deleting?: boolean
+  onDelete?: (articleId: number) => void
 }
 
-export function ArticleCard({ article, userId, isFavorited = false }: ArticleCardProps) {
+export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
@@ -99,6 +102,16 @@ export function ArticleCard({ article, userId, isFavorited = false }: ArticleCar
           <div className="flex items-center gap-1 shrink-0">
             {userId && (
               <FavoriteButton articleId={article.id} userId={userId} initialFavorited={isFavorited} />
+            )}
+            {canDelete && onDelete && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(article.id) }}
+                disabled={deleting}
+                className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
+                title="Supprimer cette actu"
+              >
+                <Trash2 className={cn('size-4', deleting && 'animate-pulse')} />
+              </button>
             )}
             <a
               href={article.url}

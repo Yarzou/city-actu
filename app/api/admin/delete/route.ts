@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_TABLES = ['categories', 'sources', 'articles'] as const
+const ALLOWED_TABLES = ['categories', 'sources', 'articles', 'import_summaries'] as const
 type AllowedTable = typeof ALLOWED_TABLES[number]
 
 export async function POST(request: Request) {

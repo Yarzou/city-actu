@@ -57,6 +57,7 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
 
   const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange) => {
     const supabase = createClient()
@@ -203,6 +204,41 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
 
+  async function handleDeleteArticle(articleId: number) {
+    if (!userId) {
+      setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
+      return
+    }
+
+    setDeletingArticleId(articleId)
+    try {
+      const res = await fetch('/api/admin/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table: 'articles', id: articleId }),
+      })
+      const data = await res.json()
+      if (res.status === 401) {
+        setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
+      } else if (data.ok) {
+        setArticles(prev => prev.filter(article => article.id !== articleId))
+        setFavorites(prev => {
+          const next = new Set(prev)
+          next.delete(articleId)
+          return next
+        })
+        setRefreshFeedback({ ok: true, msg: 'Actu supprimée.' })
+      } else {
+        setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
+      }
+    } catch {
+      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
+    } finally {
+      setDeletingArticleId(null)
+      setTimeout(() => setRefreshFeedback(null), 5000)
+    }
+  }
+
   const currentCategory = categories.find(c => c.slug === categorySlug)
   const grouped = dateRange ? groupByDay(articles) : null
 
@@ -326,6 +362,9 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
                         article={article}
                         userId={userId}
                         isFavorited={favorites.has(article.id)}
+                        canDelete={Boolean(userId)}
+                        deleting={deletingArticleId === article.id}
+                        onDelete={handleDeleteArticle}
                       />
                     ))}
                   </div>
@@ -354,6 +393,9 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
                     article={article}
                     userId={userId}
                     isFavorited={favorites.has(article.id)}
+                    canDelete={Boolean(userId)}
+                    deleting={deletingArticleId === article.id}
+                    onDelete={handleDeleteArticle}
                   />
                 ))}
               </div>
@@ -376,4 +418,3 @@ export function ArticleFeed({ citySlug, categorySlug, hideHeader = false, hideMi
     </div>
   )
 }
-
