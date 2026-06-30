@@ -326,7 +326,7 @@ export function AdminSourcesPanel() {
   async function deletePastArticlesBeforeWeekStart() {
     askConfirm(
       'Supprimer les actus passées',
-      'Supprimer tous les articles publiés avant le lundi 00:00 de la semaine en cours ? Cette action est irréversible.',
+      'Supprimer les actus passées avant le lundi 00:00 de la semaine en cours (date de fin si présente, sinon date publiée) ? Cette action est irréversible.',
       'Supprimer les actus passées',
       async () => {
         closeConfirm()
@@ -346,7 +346,7 @@ export function AdminSourcesPanel() {
               : 'lundi en cours'
             setAdminFeedback({
               ok: true,
-              msg: `${data.deleted ?? 0} article(s) supprimé(s) avant ${thresholdLabel}.`,
+              msg: `${data.deleted ?? 0} article(s) passé(s) supprimé(s) avant ${thresholdLabel}.`,
             })
           }
         } catch {
@@ -492,7 +492,7 @@ export function AdminSourcesPanel() {
             onClick={deletePastArticlesBeforeWeekStart}
             disabled={deletingPast || deletingAll || refreshing}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition-colors"
-            title="Supprimer les articles antérieurs au lundi de la semaine en cours"
+            title="Supprimer les articles passés avant le lundi de la semaine en cours"
           >
             <Trash2 className={cn('size-4', deletingPast && 'animate-pulse')} />
             <span className="hidden sm:inline">{deletingPast ? 'Suppression…' : 'Supprimer les actus passées'}</span>
