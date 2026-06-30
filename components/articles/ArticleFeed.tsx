@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { ChevronDown, RefreshCw } from 'lucide-react'
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns'
@@ -14,6 +14,53 @@ import type { Article as ArticleType, Category as CategoryType } from '@/lib/typ
 import { cn, groupByDay, formatDayHeader } from '@/lib/utils'
 
 const PAGE_SIZE = 20
+const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
+const EXTERNAL_LINK_SCROLL_TTL_MS = 30 * 60 * 1000
+
+type ExternalLinkScrollSnapshot = {
+  context: string
+  y: number
+  ts: number
+}
+
+function buildScrollContext(citySlug: string, categorySlug?: string, range?: DateRange | null) {
+  const category = categorySlug ?? 'all'
+  const from = range?.from ? range.from.toISOString() : 'none'
+  const to = range?.to ? range.to.toISOString() : 'none'
+  return `${citySlug}|${category}|${from}|${to}`
+}
+
+function readExternalScrollSnapshot(): ExternalLinkScrollSnapshot | null {
+  if (typeof window === 'undefined') return null
+  const raw = window.sessionStorage.getItem(EXTERNAL_LINK_SCROLL_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<ExternalLinkScrollSnapshot>
+    if (
+      typeof parsed.context !== 'string' ||
+      typeof parsed.y !== 'number' ||
+      typeof parsed.ts !== 'number'
+    ) {
+      window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
+      return null
+    }
+    return parsed as ExternalLinkScrollSnapshot
+  } catch {
+    window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
+    return null
+  }
+}
+
+function writeExternalScrollSnapshot(snapshot: ExternalLinkScrollSnapshot) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(EXTERNAL_LINK_SCROLL_KEY, JSON.stringify(snapshot))
+}
+
+function clearExternalScrollSnapshot() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
+}
 
 /**
  * Sorts articles for the default (no date filter) view:
@@ -59,6 +106,11 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
+  const restoredContextRef = useRef<string | null>(null)
+  const scrollContext = useMemo(
+    () => buildScrollContext(citySlug, categorySlug, dateRange),
+    [citySlug, categorySlug, dateRange]
+  )
 
   const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange) => {
     const supabase = createClient()
@@ -152,6 +204,51 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [citySlug, categorySlug])
+
+  useEffect(() => {
+    const persistLatestScrollPosition = () => {
+      const snapshot = readExternalScrollSnapshot()
+      if (!snapshot || snapshot.context !== scrollContext) return
+      writeExternalScrollSnapshot({ ...snapshot, y: window.scrollY, ts: Date.now() })
+    }
+
+    const onPageHide = () => {
+      persistLatestScrollPosition()
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        persistLatestScrollPosition()
+      }
+    }
+
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [scrollContext])
+
+  useEffect(() => {
+    if (loading) return
+    if (restoredContextRef.current === scrollContext) return
+
+    const snapshot = readExternalScrollSnapshot()
+    if (!snapshot) return
+    if (snapshot.context !== scrollContext) return
+    if (Date.now() - snapshot.ts > EXTERNAL_LINK_SCROLL_TTL_MS) {
+      clearExternalScrollSnapshot()
+      return
+    }
+
+    restoredContextRef.current = scrollContext
+    const targetY = Math.max(0, snapshot.y)
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, behavior: 'auto' })
+      clearExternalScrollSnapshot()
+    })
+  }, [loading, articles.length, scrollContext])
 
   async function loadMore() {
     setLoadingMore(true)
@@ -367,6 +464,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
                         canDelete={Boolean(userId && canManageContent)}
                         deleting={deletingArticleId === article.id}
                         onDelete={handleDeleteArticle}
+                        scrollRestoreContext={scrollContext}
                       />
                     ))}
                   </div>
@@ -398,6 +496,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
                     canDelete={Boolean(userId && canManageContent)}
                     deleting={deletingArticleId === article.id}
                     onDelete={handleDeleteArticle}
+                    scrollRestoreContext={scrollContext}
                   />
                 ))}
               </div>

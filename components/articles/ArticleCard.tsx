@@ -15,9 +15,12 @@ interface ArticleCardProps {
   canDelete?: boolean
   deleting?: boolean
   onDelete?: (articleId: number) => void
+  scrollRestoreContext?: string
 }
 
-export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete }: ArticleCardProps) {
+const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
+
+export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
@@ -35,6 +38,18 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
     const el = textRef.current
     if (el) setIsClamped(el.scrollHeight > el.clientHeight + 2)
   }, [article.content_preview])
+
+  function rememberScrollBeforeExternalOpen() {
+    if (typeof window === 'undefined') return
+    if (!scrollRestoreContext) return
+
+    const payload = {
+      context: scrollRestoreContext,
+      y: window.scrollY,
+      ts: Date.now(),
+    }
+    window.sessionStorage.setItem(EXTERNAL_LINK_SCROLL_KEY, JSON.stringify(payload))
+  }
 
   return (
     <article className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
@@ -117,6 +132,7 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={rememberScrollBeforeExternalOpen}
               className="inline-flex items-center justify-center p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
               title="Voir l'article original"
             >
