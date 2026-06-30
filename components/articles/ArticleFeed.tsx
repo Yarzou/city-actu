@@ -21,6 +21,8 @@ type ExternalLinkScrollSnapshot = {
   context: string
   y: number
   ts: number
+  expectedCount?: number
+  pendingExternalReturn?: boolean
 }
 
 function buildScrollContext(citySlug: string, categorySlug?: string, range?: DateRange | null) {
@@ -42,6 +44,14 @@ function readExternalScrollSnapshot(): ExternalLinkScrollSnapshot | null {
       typeof parsed.y !== 'number' ||
       typeof parsed.ts !== 'number'
     ) {
+      window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
+      return null
+    }
+    if (parsed.expectedCount != null && typeof parsed.expectedCount !== 'number') {
+      window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
+      return null
+    }
+    if (parsed.pendingExternalReturn != null && typeof parsed.pendingExternalReturn !== 'boolean') {
       window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
       return null
     }
@@ -112,9 +122,13 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
     [citySlug, categorySlug, dateRange]
   )
 
-  const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange) => {
+  const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange, resetTargetCount = PAGE_SIZE) => {
     const supabase = createClient()
     const currentOffset = reset ? 0 : offset
+    const effectiveTargetCount = reset ? Math.max(PAGE_SIZE, resetTargetCount) : PAGE_SIZE
+    const rangeEnd = reset
+      ? currentOffset + effectiveTargetCount - 1
+      : currentOffset + PAGE_SIZE - 1
 
     const { data: city } = await supabase
       .from('cities').select('id,name').eq('slug', citySlug).single()
@@ -143,10 +157,11 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
     const { data } = await query
       .order('published_at', { ascending: range ? true : false, nullsFirst: false })
       .order('fetched_at', { ascending: false })
-      .range(currentOffset, currentOffset + PAGE_SIZE - 1)
+      .range(currentOffset, rangeEnd)
 
     const results = data ?? []
-    setHasMore(results.length === PAGE_SIZE)
+    const requestedSize = reset ? effectiveTargetCount : PAGE_SIZE
+    setHasMore(results.length === requestedSize)
     if (reset) {
       setArticles(range ? results : sortByProximity(results))
     } else {
@@ -183,13 +198,24 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
     const supabase = createClient()
 
     async function init() {
+      const initialContext = buildScrollContext(citySlug, categorySlug, null)
+      const snapshot = readExternalScrollSnapshot()
+      const hasValidExternalReturn =
+        Boolean(snapshot?.pendingExternalReturn) &&
+        snapshot?.context === initialContext &&
+        Date.now() - snapshot.ts <= EXTERNAL_LINK_SCROLL_TTL_MS
+
+      const requestedInitialCount = hasValidExternalReturn
+        ? Math.min(Math.max(PAGE_SIZE, snapshot?.expectedCount ?? PAGE_SIZE), 200)
+        : PAGE_SIZE
+
       const { data: { user } } = await supabase.auth.getUser()
       setUserId(user?.id ?? null)
 
       const { data: cats } = await supabase.from('categories').select('*').order('name')
       setCategories(cats ?? [])
 
-      await fetchArticles(true, null)
+      await fetchArticles(true, null, requestedInitialCount)
       await fetchActiveDates(calendarMonth)
 
       if (user) {
@@ -208,8 +234,13 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
   useEffect(() => {
     const persistLatestScrollPosition = () => {
       const snapshot = readExternalScrollSnapshot()
-      if (!snapshot || snapshot.context !== scrollContext) return
-      writeExternalScrollSnapshot({ ...snapshot, y: window.scrollY, ts: Date.now() })
+      if (!snapshot || snapshot.context !== scrollContext || !snapshot.pendingExternalReturn) return
+      writeExternalScrollSnapshot({
+        ...snapshot,
+        y: window.scrollY,
+        ts: Date.now(),
+        expectedCount: Math.max(offset, articles.length),
+      })
     }
 
     const onPageHide = () => {
@@ -228,7 +259,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       window.removeEventListener('pagehide', onPageHide)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [scrollContext])
+  }, [scrollContext, offset, articles.length])
 
   useEffect(() => {
     if (loading) return
@@ -237,10 +268,12 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
     const snapshot = readExternalScrollSnapshot()
     if (!snapshot) return
     if (snapshot.context !== scrollContext) return
+    if (!snapshot.pendingExternalReturn) return
     if (Date.now() - snapshot.ts > EXTERNAL_LINK_SCROLL_TTL_MS) {
       clearExternalScrollSnapshot()
       return
     }
+    if (articles.length < Math.max(PAGE_SIZE, snapshot.expectedCount ?? PAGE_SIZE)) return
 
     restoredContextRef.current = scrollContext
     const targetY = Math.max(0, snapshot.y)
@@ -465,6 +498,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
                         deleting={deletingArticleId === article.id}
                         onDelete={handleDeleteArticle}
                         scrollRestoreContext={scrollContext}
+                        scrollRestoreCount={articles.length}
                       />
                     ))}
                   </div>
@@ -497,6 +531,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
                     deleting={deletingArticleId === article.id}
                     onDelete={handleDeleteArticle}
                     scrollRestoreContext={scrollContext}
+                    scrollRestoreCount={articles.length}
                   />
                 ))}
               </div>

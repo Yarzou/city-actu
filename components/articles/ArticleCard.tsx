@@ -16,11 +16,12 @@ interface ArticleCardProps {
   deleting?: boolean
   onDelete?: (articleId: number) => void
   scrollRestoreContext?: string
+  scrollRestoreCount?: number
 }
 
 const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
 
-export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext }: ArticleCardProps) {
+export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext, scrollRestoreCount }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
@@ -47,6 +48,8 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
       context: scrollRestoreContext,
       y: window.scrollY,
       ts: Date.now(),
+      expectedCount: Math.max(0, scrollRestoreCount ?? 0),
+      pendingExternalReturn: true,
     }
     window.sessionStorage.setItem(EXTERNAL_LINK_SCROLL_KEY, JSON.stringify(payload))
   }
