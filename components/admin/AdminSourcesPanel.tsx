@@ -67,6 +67,8 @@ export function AdminSourcesPanel() {
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [newCategory, setNewCategory]           = useState({ name: '', slug: '', icon: '', color: '' })
   const [deletingAll, setDeletingAll]           = useState(false)
+  const [deletingPast, setDeletingPast]         = useState(false)
+  const [adminFeedback, setAdminFeedback]       = useState<{ ok: boolean; msg: string } | null>(null)
   // Confirm dialog state
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; message: string; confirmLabel: string; onConfirm: () => void }>({
     open: false, title: '', message: '', confirmLabel: 'Confirmer', onConfirm: () => {},
@@ -303,17 +305,54 @@ export function AdminSourcesPanel() {
         setDeletingAll(true)
         setRefreshResult(null)
         setRefreshError(null)
+        setAdminFeedback(null)
         setFetchResult({})
         try {
           const res = await fetch('/api/admin/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: 'articles' }) })
           const data = await res.json()
           if (!res.ok || !data.ok) {
             setRefreshError('Erreur lors de la suppression : ' + (data.error ?? 'inconnue'))
+          } else {
+            setAdminFeedback({ ok: true, msg: 'Tous les articles ont été supprimés.' })
           }
         } catch {
           setRefreshError('Erreur réseau')
         }
         setDeletingAll(false)
+      }
+    )
+  }
+
+  async function deletePastArticlesBeforeWeekStart() {
+    askConfirm(
+      'Supprimer les actus passées',
+      'Supprimer tous les articles publiés avant le lundi 00:00 de la semaine en cours ? Cette action est irréversible.',
+      'Supprimer les actus passées',
+      async () => {
+        closeConfirm()
+        setDeletingPast(true)
+        setRefreshResult(null)
+        setRefreshError(null)
+        setAdminFeedback(null)
+        setFetchResult({})
+        try {
+          const res = await fetch('/api/admin/clear-articles', { method: 'POST' })
+          const data = await res.json()
+          if (!res.ok || !data.ok) {
+            setRefreshError('Erreur lors de la suppression : ' + (data.error ?? 'inconnue'))
+          } else {
+            const thresholdLabel = data.threshold
+              ? new Date(data.threshold as string).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })
+              : 'lundi en cours'
+            setAdminFeedback({
+              ok: true,
+              msg: `${data.deleted ?? 0} article(s) supprimé(s) avant ${thresholdLabel}.`,
+            })
+          }
+        } catch {
+          setRefreshError('Erreur réseau')
+        }
+        setDeletingPast(false)
       }
     )
   }
@@ -442,7 +481,7 @@ export function AdminSourcesPanel() {
         <div className="flex items-center gap-2">
           <button
             onClick={deleteAllArticles}
-            disabled={deletingAll || refreshing}
+            disabled={deletingAll || deletingPast || refreshing}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
             title="Supprimer tous les articles importés"
           >
@@ -450,8 +489,17 @@ export function AdminSourcesPanel() {
             <span className="hidden sm:inline">{deletingAll ? 'Suppression…' : 'Tout supprimer'}</span>
           </button>
           <button
+            onClick={deletePastArticlesBeforeWeekStart}
+            disabled={deletingPast || deletingAll || refreshing}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+            title="Supprimer les articles antérieurs au lundi de la semaine en cours"
+          >
+            <Trash2 className={cn('size-4', deletingPast && 'animate-pulse')} />
+            <span className="hidden sm:inline">{deletingPast ? 'Suppression…' : 'Supprimer les actus passées'}</span>
+          </button>
+          <button
             onClick={refreshAllSources}
-            disabled={refreshing || deletingAll}
+            disabled={refreshing || deletingAll || deletingPast}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
@@ -481,6 +529,21 @@ export function AdminSourcesPanel() {
         <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6 text-sm text-red-800">
           <span>❌ {refreshError}</span>
           <button onClick={() => setRefreshError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
+        </div>
+      )}
+
+      {adminFeedback && (
+        <div className={cn(
+          'flex items-center justify-between rounded-xl px-4 py-3 mb-4 text-sm border',
+          adminFeedback.ok
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+        )}>
+          <span>{adminFeedback.ok ? '✅' : '❌'} {adminFeedback.msg}</span>
+          <button onClick={() => setAdminFeedback(null)} className={cn(
+            'ml-4',
+            adminFeedback.ok ? 'text-green-600 hover:text-green-800' : 'text-red-600 hover:text-red-800'
+          )}>✕</button>
         </div>
       )}
 
