@@ -32,4 +32,7 @@
   <!-- Promotion one-shot des utilisateurs existants en admin -->
   <include file="liquibase/changelog/009-promote-existing-users-admin.sql"/>
 
+  <!-- Recherche accent/casse-insensible sur articles -->
+  <include file="liquibase/changelog/010-article-search-normalization.sql"/>
+
 </databaseChangeLog>

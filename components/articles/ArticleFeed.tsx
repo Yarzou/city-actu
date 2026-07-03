@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { ChevronDown, RefreshCw, Search, X } from 'lucide-react'
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from './ArticleCard'
@@ -11,9 +11,10 @@ import { DateFilter, type DateRange } from './DateFilter'
 import { MiniCalendar } from './MiniCalendar'
 import { CATEGORY_ICONS } from '@/lib/types'
 import type { Article as ArticleType, Category as CategoryType } from '@/lib/types'
-import { cn, groupByDay, formatDayHeader } from '@/lib/utils'
+import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
 
 const PAGE_SIZE = 20
+const SEARCH_DEBOUNCE_MS = 250
 const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
 const EXTERNAL_LINK_SCROLL_TTL_MS = 30 * 60 * 1000
 
@@ -25,11 +26,12 @@ type ExternalLinkScrollSnapshot = {
   pendingExternalReturn?: boolean
 }
 
-function buildScrollContext(citySlug: string, categorySlug?: string, range?: DateRange | null) {
+function buildScrollContext(citySlug: string, categorySlug?: string, range?: DateRange | null, searchTerm = '') {
   const category = categorySlug ?? 'all'
   const from = range?.from ? range.from.toISOString() : 'none'
   const to = range?.to ? range.to.toISOString() : 'none'
-  return `${citySlug}|${category}|${from}|${to}`
+  const search = searchTerm || 'none'
+  return `${citySlug}|${category}|${from}|${to}|${search}`
 }
 
 function readExternalScrollSnapshot(): ExternalLinkScrollSnapshot | null {
@@ -113,13 +115,16 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
   const [dateRange, setDateRange]   = useState<DateRange | null>(null)
   const [activeDates, setActiveDates] = useState<string[]>([])
   const [calendarMonth, setCalendarMonth] = useState(new Date())
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
+  const hasInitializedRef = useRef(false)
   const restoredContextRef = useRef<string | null>(null)
   const scrollContext = useMemo(
-    () => buildScrollContext(citySlug, categorySlug, dateRange),
-    [citySlug, categorySlug, dateRange]
+    () => buildScrollContext(citySlug, categorySlug, dateRange, searchQuery),
+    [citySlug, categorySlug, dateRange, searchQuery]
   )
 
   const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange, resetTargetCount = PAGE_SIZE) => {
@@ -154,6 +159,11 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
         .lte('published_at', range.to.toISOString())
     }
 
+    if (searchQuery) {
+      const searchPattern = searchQuery.split(' ').filter(Boolean).join('%')
+      query = query.or(`title_search.ilike.%${searchPattern}%,content_preview_search.ilike.%${searchPattern}%`)
+    }
+
     const { data } = await query
       .order('published_at', { ascending: range ? true : false, nullsFirst: false })
       .order('fetched_at', { ascending: false })
@@ -171,7 +181,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       })
     }
     setOffset(currentOffset + results.length)
-  }, [citySlug, categorySlug, offset, dateRange])
+  }, [citySlug, categorySlug, offset, dateRange, searchQuery])
 
   const fetchActiveDates = useCallback(async (month: Date) => {
     const supabase = createClient()
@@ -195,10 +205,19 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
   }, [citySlug])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(normalizeSearchText(searchInput))
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
+
+  useEffect(() => {
     const supabase = createClient()
 
     async function init() {
-      const initialContext = buildScrollContext(citySlug, categorySlug, null)
+      hasInitializedRef.current = false
+      const initialContext = buildScrollContext(citySlug, categorySlug, null, searchQuery)
       const snapshot = readExternalScrollSnapshot()
       const hasValidExternalReturn =
         Boolean(snapshot?.pendingExternalReturn) &&
@@ -224,12 +243,21 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
         setFavorites(new Set((favs ?? []).map((f: { article_id: number }) => f.article_id)))
       }
 
+      hasInitializedRef.current = true
       setLoading(false)
     }
 
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [citySlug, categorySlug])
+
+  useEffect(() => {
+    if (!hasInitializedRef.current) return
+    setOffset(0)
+    setLoading(true)
+    fetchArticles(true, dateRange).then(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
 
   useEffect(() => {
     const persistLatestScrollPosition = () => {
@@ -435,6 +463,27 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
         <div className="flex-1 min-w-0">
           {/* Date filter pills */}
           <div className="mb-4">
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Rechercher dans le titre ou le contenu…"
+                className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-10 text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                aria-label="Rechercher des articles"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  aria-label="Effacer la recherche"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
             <DateFilter value={dateRange} onChange={handleDateChange} />
           </div>
 
@@ -476,7 +525,9 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
           ) : articles.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-4xl mb-4">📰</p>
-              <p className="font-medium text-gray-600">Aucun article dans cette catégorie</p>
+              <p className="font-medium text-gray-600">
+                {searchQuery ? 'Aucun article ne correspond à cette recherche' : 'Aucun article dans cette catégorie'}
+              </p>
             </div>
           ) : grouped ? (
             // Chronological grouped view

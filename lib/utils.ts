@@ -43,6 +43,16 @@ export function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength).trimEnd() + '…'
 }
 
+export function normalizeSearchText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function groupByDay(articles: Article[]): Map<string, Article[]> {
   const map = new Map<string, Article[]>()
   for (const article of articles) {
