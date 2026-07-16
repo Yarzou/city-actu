@@ -6,6 +6,13 @@ import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings,
 import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
+
+const THEME_OPTIONS: { value: ThemeChoice; label: string; title: string }[] = [
+  { value: 'light',  label: '☀️', title: 'Clair' },
+  { value: 'dark',   label: '🌙', title: 'Sombre' },
+  { value: 'system', label: '💻', title: 'Système' },
+]
 
 const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   list_selector: '',
@@ -28,6 +35,8 @@ interface FetchResultDetail {
 }
 
 export function AdminSourcesPanel() {
+  const { theme, setTheme } = useTheme()
+  const [showAppearance, setShowAppearance] = useState(false)
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [cities, setCities]         = useState<City[]>([])
@@ -472,6 +481,45 @@ export function AdminSourcesPanel() {
 
   return (
     <div>
+      {/* Apparence */}
+      <div className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowAppearance(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-base leading-none">🎨</span>
+            Apparence
+          </span>
+          {showAppearance ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+        </button>
+        {showAppearance && (
+          <div className="flex items-center justify-between gap-4 px-4 py-4 bg-white">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Thème de l&apos;interface</p>
+              <p className="text-xs text-gray-400">Clair, sombre ou basé sur le système</p>
+            </div>
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
+              {THEME_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTheme(opt.value)}
+                  title={opt.title}
+                  className={cn(
+                    'px-2.5 py-1.5 rounded-lg text-sm transition-all',
+                    theme === opt.value
+                      ? 'bg-white text-gray-900 shadow-sm font-medium'
+                      : 'text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
