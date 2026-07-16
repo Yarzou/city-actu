@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, Rss, Tags, Palette } from 'lucide-react'
 import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -36,7 +36,8 @@ interface FetchResultDetail {
 
 export function AdminSourcesPanel() {
   const { theme, setTheme } = useTheme()
-  const [showAppearance, setShowAppearance] = useState(false)
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
+  const [sourcesOpen, setSourcesOpen] = useState(true)
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [cities, setCities]         = useState<City[]>([])
@@ -69,7 +70,7 @@ export function AdminSourcesPanel() {
   const [detectingConfig, setDetectingConfig]   = useState(false)
   const [detectConfigError, setDetectConfigError] = useState<string | null>(null)
   // Category management
-  const [showCategorySection, setShowCategorySection] = useState(false)
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [editingCategory, setEditingCategory]   = useState<number | null>(null)
   const [editCategoryData, setEditCategoryData] = useState({ name: '', slug: '', icon: '', color: '' })
   const [savingCategory, setSavingCategory]     = useState(false)
@@ -481,51 +482,76 @@ export function AdminSourcesPanel() {
 
   return (
     <div>
-      {/* Apparence */}
-      <div className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
-        <button
-          onClick={() => setShowAppearance(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
-        >
-          <span className="flex items-center gap-2">
-            <span className="text-base leading-none">🎨</span>
-            Apparence
-          </span>
-          {showAppearance ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-        </button>
-        {showAppearance && (
-          <div className="flex items-center justify-between gap-4 px-4 py-4 bg-white">
-            <div>
-              <p className="text-sm font-medium text-gray-800">Thème de l&apos;interface</p>
-              <p className="text-xs text-gray-400">Clair, sombre ou basé sur le système</p>
-            </div>
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
-              {THEME_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setTheme(opt.value)}
-                  title={opt.title}
-                  className={cn(
-                    'px-2.5 py-1.5 rounded-lg text-sm transition-all',
-                    theme === opt.value
-                      ? 'bg-white text-gray-900 shadow-sm font-medium'
-                      : 'text-gray-500 hover:text-gray-700'
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
+      {/* ── Apparence ── */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div className="flex items-center border-b border-gray-100">
+          <button
+            onClick={() => setAppearanceOpen(o => !o)}
+            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <Palette size={17} className="text-brand-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-800">Apparence</span>
+            </span>
+            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', appearanceOpen && 'rotate-180')} />
+          </button>
+        </div>
+
+        {appearanceOpen && (
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-4 bg-gray-50 rounded-2xl border border-gray-200 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Thème de l&apos;interface</p>
+                <p className="text-xs text-gray-400">Clair, sombre ou basé sur le système</p>
+              </div>
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
+                {THEME_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setTheme(opt.value)}
+                    title={opt.title}
+                    className={cn(
+                      'px-2.5 py-1.5 rounded-lg text-sm transition-all',
+                      theme === opt.value
+                        ? 'bg-white text-gray-900 shadow-sm font-medium'
+                        : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Gestion des sources</h2>
-          <p className="text-sm text-gray-500 mt-0.5">{sources.length} source(s) configurée(s)</p>
+      {/* ── Gestion des sources ── */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div className="flex items-center border-b border-gray-100">
+          <button
+            onClick={() => setSourcesOpen(o => !o)}
+            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <Rss size={17} className="text-brand-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-800">
+                Gestion des sources
+                {sources.length > 0 && (
+                  <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
+                    {sources.length}
+                  </span>
+                )}
+              </span>
+            </span>
+            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', sourcesOpen && 'rotate-180')} />
+          </button>
         </div>
+
+        {sourcesOpen && (
+        <div className="p-4">
+      {/* Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
         <div className="flex items-center gap-2">
           <button
             onClick={deleteAllArticles}
@@ -1118,19 +1144,34 @@ export function AdminSourcesPanel() {
           <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
         )}
       </div>
+        </div>
+        )}
+      </div>
 
-      {/* ── Catégories ── */}
-      <div className="mt-10">
-        <button
-          onClick={() => setShowCategorySection(v => !v)}
-          className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-brand-700 transition-colors mb-4"
-        >
-          <span>{showCategorySection ? '▾' : '▸'}</span>
-          Gestion des catégories ({categories.length})
-        </button>
+      {/* ── Gestion des catégories ── */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div className="flex items-center border-b border-gray-100">
+          <button
+            onClick={() => setCategoriesOpen(o => !o)}
+            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <Tags size={17} className="text-brand-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-gray-800">
+                Gestion des catégories
+                {categories.length > 0 && (
+                  <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
+                    {categories.length}
+                  </span>
+                )}
+              </span>
+            </span>
+            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', categoriesOpen && 'rotate-180')} />
+          </button>
+        </div>
 
-        {showCategorySection && (
-          <div className="space-y-3">
+        {categoriesOpen && (
+          <div className="p-4 space-y-3">
             {/* Existing categories */}
             {categories.map(cat => (
               <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-3">
