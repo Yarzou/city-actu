@@ -75,23 +75,15 @@ function clearExternalScrollSnapshot() {
 }
 
 /**
- * Sorts articles for the default (no date filter) view:
- * 1. Upcoming events (published_at >= now) → ascending (nearest first)
- * 2. Past articles (published_at < now or null) → descending (most recent first)
+ * Sorts articles for the default (no date filter) view by proximity to today:
+ * the date closest to now comes first, whether it's in the past or the future,
+ * and articles get progressively further away (in either direction) after that.
  */
 function sortByProximity(items: ArticleType[]): ArticleType[] {
   const now = Date.now()
-  const future = items
-    .filter(a => a.published_at && new Date(a.published_at).getTime() >= now)
-    .sort((a, b) => new Date(a.published_at!).getTime() - new Date(b.published_at!).getTime())
-  const past = items
-    .filter(a => !a.published_at || new Date(a.published_at).getTime() < now)
-    .sort((a, b) => {
-      const ta = a.published_at ? new Date(a.published_at).getTime() : new Date(a.fetched_at).getTime()
-      const tb = b.published_at ? new Date(b.published_at).getTime() : new Date(b.fetched_at).getTime()
-      return tb - ta
-    })
-  return [...future, ...past]
+  const timeOf = (a: ArticleType) =>
+    new Date(a.published_at ?? a.fetched_at).getTime()
+  return [...items].sort((a, b) => Math.abs(timeOf(a) - now) - Math.abs(timeOf(b) - now))
 }
 
 interface ArticleFeedProps {
