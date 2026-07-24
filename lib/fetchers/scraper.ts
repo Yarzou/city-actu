@@ -157,6 +157,17 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
 
       if (!title || !url) return
 
+      // Optional title filter: skip items that don't match (e.g. keep only "guinguette")
+      if (config.title_filter) {
+        let keep: boolean
+        try {
+          keep = new RegExp(config.title_filter, 'i').test(title)
+        } catch {
+          keep = title.toLowerCase().includes(config.title_filter.toLowerCase())
+        }
+        if (!keep) return
+      }
+
       const content = contentEl?.text().trim().slice(0, 500) ?? null
       const image = imageEl?.attr('src') ?? imageEl?.attr('data-src') ?? null
       const dateText = dateEl?.attr('content') ?? dateEl?.text().trim() ?? null

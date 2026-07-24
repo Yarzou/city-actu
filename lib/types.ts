@@ -43,6 +43,9 @@ export interface ScrapingConfig {
   end_date_selector?: string
   detail_date_selector?: string
   base_url?: string
+  // Optional case-insensitive regex: only keep items whose title matches.
+  // Useful to isolate a theme (e.g. "guinguette") from a broader commune agenda.
+  title_filter?: string
 }
 
 export interface Article {
