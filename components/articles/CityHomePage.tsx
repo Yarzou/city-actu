@@ -118,6 +118,7 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
       {tab === 'actus' && (
         <ArticleFeed
           citySlug={citySlug}
+          excludeCategorySlug="guinguettes"
           canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar

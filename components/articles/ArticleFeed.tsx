@@ -89,13 +89,14 @@ function sortByProximity(items: ArticleType[]): ArticleType[] {
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
+  excludeCategorySlug?: string
   canManageContent?: boolean
   hideHeader?: boolean
   hideMiniCalendar?: boolean
   hideCategoryTabs?: boolean
 }
 
-export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false, hideCategoryTabs = false }: ArticleFeedProps) {
+export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false, hideCategoryTabs = false }: ArticleFeedProps) {
   const [articles, setArticles]     = useState<ArticleType[]>([])
   const [categories, setCategories] = useState<CategoryType[]>([])
   const [cityName, setCityName]     = useState<string>('')
@@ -144,6 +145,10 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       const { data: cat } = await supabase
         .from('categories').select('id').eq('slug', categorySlug).single()
       if (cat) query = query.eq('category_id', cat.id)
+    } else if (excludeCategorySlug) {
+      const { data: cat } = await supabase
+        .from('categories').select('id').eq('slug', excludeCategorySlug).single()
+      if (cat) query = query.neq('category_id', cat.id)
     }
 
     if (range) {
@@ -174,7 +179,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       })
     }
     setOffset(currentOffset + results.length)
-  }, [citySlug, categorySlug, offset, dateRange, searchQuery])
+  }, [citySlug, categorySlug, excludeCategorySlug, offset, dateRange, searchQuery])
 
   const fetchActiveDates = useCallback(async (month: Date) => {
     const supabase = createClient()
@@ -182,7 +187,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       .from('cities').select('id').eq('slug', citySlug).single()
     if (!city) return
 
-    const { data } = await supabase
+    let query = supabase
       .from('articles')
       .select('published_at')
       .eq('city_id', city.id)
@@ -191,11 +196,19 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
       .lte('published_at', endOfMonth(month).toISOString())
       .not('published_at', 'is', null)
 
+    if (excludeCategorySlug) {
+      const { data: cat } = await supabase
+        .from('categories').select('id').eq('slug', excludeCategorySlug).single()
+      if (cat) query = query.neq('category_id', cat.id)
+    }
+
+    const { data } = await query
+
     const dates = [...new Set((data ?? []).map(a =>
       format(new Date(a.published_at!), 'yyyy-MM-dd')
     ))]
     setActiveDates(dates)
-  }, [citySlug])
+  }, [citySlug, excludeCategorySlug])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -494,7 +507,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
             >
               Tout
             </Link>
-            {categories.map((cat) => (
+            {categories.filter((cat) => cat.slug !== excludeCategorySlug).map((cat) => (
               <Link
                 key={cat.id}
                 href={`/${citySlug}/${cat.slug}`}
