@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Newspaper, Heart, Sparkles, RefreshCw } from 'lucide-react'
+import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleFeed } from './ArticleFeed'
 import { FavoritesTab } from './FavoritesTab'
@@ -9,12 +9,13 @@ import { AIDigestTab } from './AIDigestTab'
 import { cn } from '@/lib/utils'
 import { resolveAdminStatusClient } from '@/lib/admin-client'
 
-type Tab = 'actus' | 'favoris' | 'ia'
+type Tab = 'actus' | 'guinguettes' | 'favoris' | 'ia'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'actus',   label: 'Actus',        icon: <Newspaper className="size-4" /> },
-  { id: 'favoris', label: 'Favoris',       icon: <Heart className="size-4" /> },
-  { id: 'ia',      label: 'Résumés IA',    icon: <Sparkles className="size-4" /> },
+  { id: 'actus',       label: 'Actus',        icon: <Newspaper className="size-4" /> },
+  { id: 'guinguettes', label: 'Guinguettes',  icon: <Wine className="size-4" /> },
+  { id: 'favoris',     label: 'Favoris',       icon: <Heart className="size-4" /> },
+  { id: 'ia',          label: 'Résumés IA',    icon: <Sparkles className="size-4" /> },
 ]
 
 interface CityHomePageProps {
@@ -120,6 +121,16 @@ export function CityHomePage({ citySlug }: CityHomePageProps) {
           canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar
+        />
+      )}
+      {tab === 'guinguettes' && (
+        <ArticleFeed
+          citySlug={citySlug}
+          categorySlug="guinguettes"
+          canManageContent={isAdmin}
+          hideHeader
+          hideMiniCalendar
+          hideCategoryTabs
         />
       )}
       {tab === 'favoris' && <FavoritesTab citySlug={citySlug} />}

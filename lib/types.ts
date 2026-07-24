@@ -105,6 +105,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'agenda':           'bg-purple-100 text-purple-800',
   'sports':           'bg-orange-100 text-orange-800',
   'travaux':          'bg-yellow-100 text-yellow-800',
+  'guinguettes':      'bg-teal-100 text-teal-800',
 }
 
 export const CATEGORY_ICONS: Record<string, string> = {
@@ -112,4 +113,5 @@ export const CATEGORY_ICONS: Record<string, string> = {
   'agenda':           '📅',
   'sports':           '⚽',
   'travaux':          '🚧',
+  'guinguettes':      '🍻',
 }

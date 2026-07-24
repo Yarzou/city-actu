@@ -92,9 +92,10 @@ interface ArticleFeedProps {
   canManageContent?: boolean
   hideHeader?: boolean
   hideMiniCalendar?: boolean
+  hideCategoryTabs?: boolean
 }
 
-export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false }: ArticleFeedProps) {
+export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false, hideCategoryTabs = false }: ArticleFeedProps) {
   const [articles, setArticles]     = useState<ArticleType[]>([])
   const [categories, setCategories] = useState<CategoryType[]>([])
   const [cityName, setCityName]     = useState<string>('')
@@ -480,6 +481,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
           </div>
 
           {/* Category filter tabs */}
+          {!hideCategoryTabs && (
           <div className="flex flex-nowrap overflow-x-auto scrollbar-hide gap-2 mb-6 sm:flex-wrap">
             <Link
               href={`/${citySlug}`}
@@ -508,6 +510,7 @@ export function ArticleFeed({ citySlug, categorySlug, canManageContent = false, 
               </Link>
             ))}
           </div>
+          )}
 
           {/* Feed */}
           {loading ? (
