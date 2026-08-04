@@ -80,10 +80,17 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     insertedArticles: [],
   }
 
+  // Persists the health of this fetch on the source row before returning.
+  // Every exit path goes through here so a broken source stops failing silently.
+  const finish = async (): Promise<FetchResult> => {
+    await recordFetchHealth(source, result)
+    return result
+  }
+
   // Guard: scraping sources without config can't be fetched
   if (source.type === 'scraping' && !source.scraping_config) {
     result.errors.push(`Config scraping manquante pour "${source.name}" — ajoutez les sélecteurs CSS dans l'admin`)
-    return result
+    return finish()
   }
 
   const items = source.type === 'rss'
@@ -95,7 +102,7 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     if (!result.errors.length) {
       result.errors.push(`Aucun article récupéré pour "${source.name}" — vérifiez l'URL et les sélecteurs`)
     }
-    return result
+    return finish()
   }
 
   const supabase = getServiceClient()
@@ -128,7 +135,29 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     }
   }
 
-  return result
+  return finish()
+}
+
+/**
+ * Writes the outcome of a fetch onto the source row so the admin panel can show
+ * a health badge. Never throws: a monitoring write must not break ingestion.
+ */
+async function recordFetchHealth(source: Source, result: FetchResult): Promise<void> {
+  const ok = result.errors.length === 0 && result.fetched > 0
+
+  try {
+    await getServiceClient()
+      .from('sources')
+      .update({
+        last_fetch_at:        new Date().toISOString(),
+        last_fetch_status:    ok ? 'ok' : 'error',
+        last_fetch_error:     ok ? null : (result.errors[0]?.slice(0, 500) ?? null),
+        consecutive_failures: ok ? 0 : (source.consecutive_failures ?? 0) + 1,
+      })
+      .eq('id', source.id)
+  } catch (err) {
+    console.error(`[Orchestrator] Impossible d'enregistrer la santé de "${source.name}":`, err)
+  }
 }
 
 function sleep(ms: number) {

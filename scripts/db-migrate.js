@@ -13,20 +13,41 @@
 
 const { Liquibase, LiquibaseConfig } = require('liquibase')
 const path = require('path')
+const fs = require('fs')
 
-// Vérification de la variable de mot de passe
-const dbPassword = 'uR3gbuJSp/8ed$z'
+// Charge .env.local (gitignoré) sans dépendance externe — les secrets ne doivent
+// jamais vivre dans ce fichier, qui est suivi par git.
+function loadEnvLocal() {
+  const envPath = path.resolve(__dirname, '../.env.local')
+  if (!fs.existsSync(envPath)) return
+  // split sur /\r?\n/ : en CRLF, le \r résiduel est un terminateur de ligne que `.` ne matche pas
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    if (!line || line.trimStart().startsWith('#')) continue
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i)
+    if (!match) continue
+    const [, key, rawValue] = match
+    if (process.env[key]) continue
+    process.env[key] = rawValue.trim().replace(/^["']|["']$/g, '')
+  }
+}
+loadEnvLocal()
+
+const dbPassword = process.env.SUPABASE_DB_PASSWORD ?? process.env.DB_PASSWORD
 if (!dbPassword) {
-  console.error('\n❌  Variable SUPABASE_DB_PASSWORD manquante.')
-  console.error('    Ajoutez-la dans .env.local ou exportez-la dans votre shell :\n')
-  console.error('    export SUPABASE_DB_PASSWORD="votre-mot-de-passe"\n')
+  console.error('\n❌  Mot de passe de la base manquant.')
+  console.error('    Ajoutez DB_PASSWORD (ou SUPABASE_DB_PASSWORD) dans .env.local :\n')
+  console.error('    DB_PASSWORD="votre-mot-de-passe"\n')
   process.exit(1)
 }
-//6543
+
+// Port 6543 (transaction pooler) en repli si le 5432 est filtré par un pare-feu
+const dbUrl = process.env.SUPABASE_DB_URL
+  ?? 'jdbc:postgresql://aws-1-eu-central-1.pooler.supabase.com:5432/postgres'
+
 /** @type {LiquibaseConfig} */
 const config = {
-  url: 'jdbc:postgresql://aws-1-eu-central-1.pooler.supabase.com:5432/postgres',
-  username: 'postgres.giwpesnzwtcobfffpwnh',
+  url: dbUrl,
+  username: process.env.SUPABASE_DB_USER ?? 'postgres.giwpesnzwtcobfffpwnh',
   password: dbPassword,
   changeLogFile: 'liquibase/changelog/db.changelog-master.xml',
   liquibasePropertiesFile: path.resolve(__dirname, '../liquibase/liquibase.properties'),
@@ -64,6 +85,8 @@ console.log(`\n🚀  Liquibase → ${command}\n`)
 commands[command]()
   .then(() => console.log(`\n✅  ${command} terminé avec succès.\n`))
   .catch(err => {
-    console.error(`\n❌  Erreur lors de "${command}" :`, err.message || err)
+    // Liquibase réaffiche la commande complète (mot de passe inclus) dans ses erreurs
+    const message = String(err.message || err).split(dbPassword).join('******')
+    console.error(`\n❌  Erreur lors de "${command}" :`, message)
     process.exit(1)
   })

@@ -1,5 +1,7 @@
 export type SourceType = 'rss' | 'scraping'
 
+export type FetchStatus = 'ok' | 'error'
+
 export interface City {
   id: number
   name: string
@@ -29,6 +31,11 @@ export interface Source {
   active: boolean
   scraping_config: ScrapingConfig | null
   created_at: string
+  // Santé du dernier fetch (renseignée par lib/fetchers/index.ts)
+  last_fetch_at: string | null
+  last_fetch_status: FetchStatus | null
+  last_fetch_error: string | null
+  consecutive_failures: number
   city?: City
   category?: Category
 }

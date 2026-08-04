@@ -35,4 +35,10 @@
   <!-- Recherche accent/casse-insensible sur articles -->
   <include file="liquibase/changelog/010-article-search-normalization.sql"/>
 
+  <!-- Flux RSS de la mairie morts (refonte du site) → scraping /agenda et /actualites -->
+  <include file="liquibase/changelog/011-fix-mairie-sources.sql"/>
+
+  <!-- Santé des sources : dernier fetch, statut, erreur, échecs consécutifs -->
+  <include file="liquibase/changelog/012-source-health.sql"/>
+
 </databaseChangeLog>

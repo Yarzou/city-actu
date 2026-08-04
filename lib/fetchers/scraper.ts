@@ -16,16 +16,20 @@ const FRENCH_MONTHS: Record<string, number> = {
  * Parses a French date range string such as:
  *   "Du mercredi 10 au dimanche 14 juin"
  *   "Du lundi 1er juin au dimanche 7 juin 2026"
+ *   "Samedi 22 et dimanche 23 août"
  *   "Le samedi 10 juin"
  *
  * Returns { start, end } as ISO strings, or null if unparseable.
  * The year is inferred: current year, bumped to next year if the end date is already past.
+ *
+ * Note: month names are matched with \p{L} rather than \w — \w excludes accented
+ * letters, which silently truncated "août" to "ao" and broke every accented month.
  */
 export function parseFrenchDateRange(text: string): { start: string; end: string } | null {
   const normalized = text.toLowerCase().replace(/1er/g, '1').replace(/\s+/g, ' ').trim()
 
   // Pattern: "du <day?> <num> <month?> au <day?> <num> <month> <year?>"
-  const rangeRe = /du\s+(?:\w+\s+)?(\d{1,2})\s*(\w+)?\s+au\s+(?:\w+\s+)?(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/
+  const rangeRe = /du\s+(?:\p{L}+\s+)?(\d{1,2})\s*(\p{L}+)?\s+au\s+(?:\p{L}+\s+)?(\d{1,2})\s+(\p{L}+)(?:\s+(\d{4}))?/u
   const rangeMatch = normalized.match(rangeRe)
 
   if (rangeMatch) {
@@ -48,8 +52,27 @@ export function parseFrenchDateRange(text: string): { start: string; end: string
     return { start, end }
   }
 
+  // Pattern: "<day?> <num> et <day?> <num> <month> <year?>"
+  // Common on municipal agendas: "Samedi 22 et dimanche 23 août".
+  // Must be tried before the single-date pattern, which would stop on "et".
+  const pairRe = /(?:\p{L}+\s+)?(\d{1,2})\s+et\s+(?:\p{L}+\s+)?(\d{1,2})\s+(\p{L}+)(?:\s+(\d{4}))?/u
+  const pairMatch = normalized.match(pairRe)
+
+  if (pairMatch) {
+    const startDay = parseInt(pairMatch[1])
+    const endDay   = parseInt(pairMatch[2])
+    const monthNum = FRENCH_MONTHS[pairMatch[3]]
+
+    if (monthNum) {
+      const year  = pairMatch[4] ? parseInt(pairMatch[4]) : inferYear(endDay, monthNum)
+      const start = toISO(startDay, monthNum, year)
+      const end   = toISO(endDay, monthNum, year)
+      if (start && end) return { start, end }
+    }
+  }
+
   // Pattern: "le <day?> <num> <month> <year?>"
-  const singleRe = /(?:le\s+)?(?:\w+\s+)?(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/
+  const singleRe = /(?:le\s+)?(?:\p{L}+\s+)?(\d{1,2})\s+(\p{L}+)(?:\s+(\d{4}))?/u
   const singleMatch = normalized.match(singleRe)
   if (singleMatch) {
     const day      = parseInt(singleMatch[1])

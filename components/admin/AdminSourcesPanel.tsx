@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, Rss, Tags, Palette } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+import { fr } from 'date-fns/locale'
 import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -32,6 +34,42 @@ interface FetchResultDetail {
   inserted: number
   skipped: number
   errors: string[]
+}
+
+/**
+ * Santé du dernier fetch *persisté* (colonnes last_fetch_* de la source).
+ * À ne pas confondre avec fetchResult, qui est le résultat éphémère du bouton "Tester le fetch".
+ */
+function SourceHealthBadge({ source }: { source: Source }) {
+  const { last_fetch_at, last_fetch_status, last_fetch_error, consecutive_failures } = source
+
+  if (!last_fetch_at) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Cette source n'a jamais été récupérée">
+        <span className="size-1.5 rounded-full bg-gray-300" />
+        Jamais récupérée
+      </span>
+    )
+  }
+
+  const failed = last_fetch_status === 'error'
+  const ago = formatDistanceToNow(new Date(last_fetch_at), { addSuffix: true, locale: fr })
+
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1 text-xs', failed ? 'text-red-600' : 'text-green-600')}
+      title={failed ? (last_fetch_error ?? 'Dernier fetch en échec') : `Dernier fetch réussi ${ago}`}
+    >
+      <span className={cn('size-1.5 rounded-full', failed ? 'bg-red-500' : 'bg-green-500')} />
+      {ago}
+      {consecutive_failures >= 3 && (
+        <span className="inline-flex items-center gap-0.5 text-red-600 font-medium">
+          <AlertTriangle className="size-3" />
+          {consecutive_failures} échecs
+        </span>
+      )}
+    </span>
+  )
 }
 
 export function AdminSourcesPanel() {
@@ -866,6 +904,8 @@ export function AdminSourcesPanel() {
                 )}
               </div>
 
+              <SourceHealthBadge source={source} />
+
               {result && (
                 <div className={cn('text-xs', hasErrors ? 'text-red-600' : 'text-green-600')}>
                   {hasErrors
@@ -1025,11 +1065,14 @@ export function AdminSourcesPanel() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => toggleActive(source)} title="Activer / désactiver">
-                        {source.active
-                          ? <CheckCircle className="size-5 text-brand-500" />
-                          : <XCircle className="size-5 text-gray-300" />}
-                      </button>
+                      <div className="flex flex-col items-start gap-1">
+                        <button onClick={() => toggleActive(source)} title="Activer / désactiver">
+                          {source.active
+                            ? <CheckCircle className="size-5 text-brand-500" />
+                            : <XCircle className="size-5 text-gray-300" />}
+                        </button>
+                        <SourceHealthBadge source={source} />
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
