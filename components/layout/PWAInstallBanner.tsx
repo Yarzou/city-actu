@@ -14,28 +14,54 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+// Safari throws a SecurityError on localStorage when cookies are fully blocked;
+// an uncaught throw here would silently kill the whole detection effect.
+function readDismissedUntil(): number {
+  try {
+    return Number(localStorage.getItem(DISMISSED_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
+function writeDismissedUntil(value: number) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, String(value))
+  } catch {
+    /* ignore — the banner just reappears on the next visit */
+  }
+}
+
 export default function PWAInstallBanner() {
   const [platform, setPlatform] = useState<Platform>(null)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
   const [iosHint, setIosHint] = useState(false)
+  const [isSafari, setIsSafari] = useState(true)
 
   useEffect(() => {
+    // ?install=1 forces the banner — bypasses the standalone and snooze checks.
+    const forced = new URLSearchParams(window.location.search).get('install') === '1'
+
     // Already installed — don't show
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true
-    if (isStandalone) return
+    if (isStandalone && !forced) return
 
     // User dismissed recently
-    const until = localStorage.getItem(DISMISSED_KEY)
-    if (until && Date.now() < Number(until)) return
+    if (!forced && Date.now() < readDismissedUntil()) return
 
     const ua = navigator.userAgent
-    const isIos = /iphone|ipad|ipod/i.test(ua) && !/crios|fxios/i.test(ua)
+    // iPadOS 13+ ships a desktop Safari user agent; only maxTouchPoints gives it away.
+    const isIpadOs = /macintosh/i.test(ua) && navigator.maxTouchPoints > 1
+    // Chrome and Firefox on iOS also install through the share menu, so they stay in.
+    const isIos = /iphone|ipad|ipod/i.test(ua) || isIpadOs
     const isAndroidChrome = /android/i.test(ua) && /chrome/i.test(ua) && !/edg/i.test(ua)
 
-    if (isIos) {
+    setIsSafari(!/crios|fxios|edgios|opt\//i.test(ua))
+
+    if (isIos || (forced && !isAndroidChrome)) {
       setPlatform('ios')
       setVisible(true)
     } else if (isAndroidChrome) {
@@ -52,8 +78,7 @@ export default function PWAInstallBanner() {
   }, [])
 
   const dismiss = () => {
-    const until = Date.now() + DISMISS_DAYS * 24 * 60 * 60 * 1000
-    localStorage.setItem(DISMISSED_KEY, String(until))
+    writeDismissedUntil(Date.now() + DISMISS_DAYS * 24 * 60 * 60 * 1000)
     setVisible(false)
   }
 
@@ -136,7 +161,7 @@ export default function PWAInstallBanner() {
                   <span className="inline-flex items-center gap-0.5 font-medium">
                     <Share size={13} className="inline" /> Partager
                   </span>{' '}
-                  en bas de Safari
+                  {isSafari ? 'en bas de Safari' : 'dans la barre du navigateur'}
                 </p>
                 <p>2. Puis <strong>« Sur l&apos;écran d&apos;accueil »</strong></p>
               </div>
