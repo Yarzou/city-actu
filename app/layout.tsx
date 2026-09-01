@@ -5,6 +5,7 @@ import Script from 'next/script'
 import './globals.css'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import PWAInstallBanner from '@/components/layout/PWAInstallBanner'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 
 export const viewport: Viewport = {
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </main>
           <Footer />
+          <PWAInstallBanner />
         </ThemeProvider>
         <Script id="sw-register" strategy="afterInteractive">{`
           if ('serviceWorker' in navigator) {
