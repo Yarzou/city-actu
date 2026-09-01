@@ -74,18 +74,6 @@ function clearExternalScrollSnapshot() {
   window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
 }
 
-/**
- * Sorts articles for the default (no date filter) view by proximity to today:
- * the date closest to now comes first, whether it's in the past or the future,
- * and articles get progressively further away (in either direction) after that.
- */
-function sortByProximity(items: ArticleType[]): ArticleType[] {
-  const now = Date.now()
-  const timeOf = (a: ArticleType) =>
-    new Date(a.published_at ?? a.fetched_at).getTime()
-  return [...items].sort((a, b) => Math.abs(timeOf(a) - now) - Math.abs(timeOf(b) - now))
-}
-
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
@@ -115,6 +103,8 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
   const hasInitializedRef = useRef(false)
+  // Frozen at mount so every page of the default feed shares the same lower bound.
+  const horizonRef = useRef(startOfDay(new Date()).toISOString())
   const restoredContextRef = useRef<string | null>(null)
   const scrollContext = useMemo(
     () => buildScrollContext(citySlug, categorySlug, dateRange, searchQuery),
@@ -155,6 +145,12 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
       query = query
         .gte('published_at', range.from.toISOString())
         .lte('published_at', range.to.toISOString())
+    } else {
+      // Default feed: today onwards, plus events still running and undated articles.
+      const horizon = horizonRef.current
+      query = query.or(
+        `published_at.gte.${horizon},event_end_date.gte.${horizon},published_at.is.null`
+      )
     }
 
     if (searchQuery) {
@@ -163,7 +159,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
     }
 
     const { data } = await query
-      .order('published_at', { ascending: range ? true : false, nullsFirst: false })
+      .order('published_at', { ascending: true, nullsFirst: false })
       .order('fetched_at', { ascending: false })
       .range(currentOffset, rangeEnd)
 
@@ -171,12 +167,9 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
     const requestedSize = reset ? effectiveTargetCount : PAGE_SIZE
     setHasMore(results.length === requestedSize)
     if (reset) {
-      setArticles(range ? results : sortByProximity(results))
+      setArticles(results)
     } else {
-      setArticles(prev => {
-        const next = range ? results : sortByProximity(results)
-        return [...prev, ...next]
-      })
+      setArticles(prev => [...prev, ...results])
     }
     setOffset(currentOffset + results.length)
   }, [citySlug, categorySlug, excludeCategorySlug, offset, dateRange, searchQuery])
