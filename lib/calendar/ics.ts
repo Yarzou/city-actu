@@ -1,3 +1,5 @@
+import { isUnknownTime } from '@/lib/fetchers/dates'
+
 /**
  * Génération de fichiers iCalendar (RFC 5545) pour le bouton « Ajouter au calendrier ».
  *
@@ -58,15 +60,27 @@ export function buildEventIcs(event: CalendarEvent, host: string): string {
 /**
  * Choisit entre journée entière et événement horaire.
  *
- * Un événement dont la fin tombe un autre jour est traité en journée(s) entière(s) :
- * c'est le cas des expositions et festivals, où l'horaire n'a pas de sens.
+ * Trois cas :
+ *  - heure inconnue (ancrage de midi, cf. `isUnknownTime`) → journée entière ;
+ *  - fin sur un autre jour → journée(s) entière(s), expositions et festivals ;
+ *  - sinon → créneau horaire réel.
  *
- * Limite connue : quand une source ne donne pas d'heure, les fetchers ancrent la date
- * à midi (`parisWallClockToISO` dans opendata.ts, `toISO` dans scraper.ts). Un
- * événement d'un seul jour sans heure connue produit donc une entrée 12 h–14 h,
- * indistinguable d'un vrai événement de midi sans stocker « heure connue ou non ».
+ * Limite assumée : un événement réellement à 12 h 00 pile est indistinguable d'une
+ * heure inconnue, et sortira en journée entière. C'est le bon compromis — mieux vaut
+ * une journée entière pour un événement de midi que de faux horaires pour tous ceux
+ * dont l'heure est ignorée.
  */
 function buildDateLines(event: CalendarEvent): string[] {
+  // Heure inconnue (date ancrée à midi par les fetchers) et pas de fin explicite :
+  // une journée entière est la seule sortie honnête. Inventer un créneau donnait des
+  // horaires faux — un événement « de 9 h à 17 h » ressortait en 14 h-16 h.
+  if (isUnknownTime(event.start) && !event.end) {
+    return [
+      `DTSTART;VALUE=DATE:${formatDate(event.start)}`,
+      `DTEND;VALUE=DATE:${formatDate(nextParisDay(event.start))}`,
+    ]
+  }
+
   if (event.end && !isSameDay(event.start, event.end)) {
     // DTEND est EXCLUSIF pour les dates : sans le +1 jour, le dernier jour est tronqué.
     return [

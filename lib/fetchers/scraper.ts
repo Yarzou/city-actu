@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio'
 import type { Source, ScrapingConfig } from '@/lib/types'
 import type { FetchedItem } from './rss'
+import { parisWallClockToISO, parseFrenchTimeRange, parisDateISO } from './dates'
 
 const FETCH_HEADERS = {
   'User-Agent': 'VilleActu/1.0 (agregateur actualites locales)',
@@ -99,10 +100,17 @@ function inferYear(day: number, month: number): number {
   return d.getTime() < now.getTime() - 30 * 24 * 3600 * 1000 ? year + 1 : year
 }
 
-function toISO(day: number, month: number, year: number): string | null {
-  const d = new Date(year, month - 1, day, 12, 0, 0)
-  if (isNaN(d.getTime())) return null
-  return d.toISOString()
+/**
+ * Ancre une date à midi **heure de Paris**.
+ *
+ * Utilisait `new Date(y, m, d, 12, 0, 0)`, soit midi à l'heure du serveur : sur Vercel
+ * qui tourne en UTC, ça donnait 12 h UTC, affiché 14 h à Paris. Invisible dans le feed
+ * (`formatEventDateRange` n'affiche pas l'heure) mais bien visible dans les exports
+ * .ics, qui proposaient 14 h pour un événement dont l'heure était en réalité inconnue.
+ */
+function toISO(day: number, month: number, year: number, time: string | null = null): string | null {
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return parisWallClockToISO(iso, time)
 }
 
 async function fetchDetailDates(
@@ -124,9 +132,23 @@ async function fetchDetailDates(
     const range = parseFrenchDateRange(text)
     if (!range) return { published_at: null, event_end_date: null }
 
+    // Les horaires ne sont pas dans la div de date mais dans le corps de l'article
+    // (« ... au Complexe sportif de Mazaire de 9h à 17h. »). On les cherche dans le
+    // parent du sélecteur de date, et non dans toute la page : le pied de page du site
+    // affiche les horaires d'ouverture de la mairie, qui seraient un faux positif
+    // parfait.
+    const scopeText = $(selector).first().parent().text().replace(/\s+/g, ' ')
+    const time = parseFrenchTimeRange(scopeText)
+
+    const startDay = parisDateISO(new Date(range.start))
+    const endDay   = parisDateISO(new Date(range.end))
+
     return {
-      published_at:   range.start,
-      event_end_date: range.end !== range.start ? range.end : null,
+      published_at: parisWallClockToISO(startDay, time?.start ?? null),
+      event_end_date: startDay === endDay
+        // Même jour : on ne pose une fin que si l'heure de fin est connue.
+        ? (time?.end ? parisWallClockToISO(startDay, time.end) : null)
+        : parisWallClockToISO(endDay, time?.end ?? null),
     }
   } catch {
     return { published_at: null, event_end_date: null }

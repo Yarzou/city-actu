@@ -1,5 +1,6 @@
 import type { Source } from '@/lib/types'
 import type { FetchedItem } from './rss'
+import { parisWallClockToISO } from './dates'
 
 const FETCH_HEADERS = {
   'User-Agent': 'VilleActu/1.0 (agregateur actualites locales)',
@@ -180,37 +181,4 @@ function pick(row: OdsRow, keys: string[]): string | null {
   return null
 }
 
-/**
- * Convertit une date/heure locale française en instant UTC.
- *
- * Les datasets donnent une heure murale ("20:00" = 20h à Nantes) sans fuseau.
- * L'interpréter comme de l'UTC décalerait l'affichage d'une à deux heures selon
- * la saison — et ferait basculer un événement de fin de soirée au lendemain.
- * On résout donc le décalage réel de Paris à cette date.
- *
- * Sans heure, on ancre à midi : la date affichée reste la bonne quel que soit
- * le fuseau du lecteur (même convention que `toISO` dans scraper.ts).
- */
-function parisWallClockToISO(date: string, time: string | null): string | null {
-  const hhmm = /^\d{1,2}:\d{2}/.exec(time ?? '')?.[0] ?? '12:00'
-  const [h, m] = hhmm.split(':')
-  const provisional = new Date(`${date}T${h.padStart(2, '0')}:${m}:00Z`)
-  if (isNaN(provisional.getTime())) return null
 
-  const offsetMinutes = parisOffsetMinutes(provisional)
-  return new Date(provisional.getTime() - offsetMinutes * 60_000).toISOString()
-}
-
-/** Décalage de Europe/Paris en minutes à un instant donné (+60 ou +120). */
-function parisOffsetMinutes(at: Date): number {
-  const formatted = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Europe/Paris',
-    timeZoneName: 'longOffset',
-  }).formatToParts(at).find((p) => p.type === 'timeZoneName')?.value
-
-  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(formatted ?? '')
-  if (!match) return 0
-
-  const sign = match[1] === '-' ? -1 : 1
-  return sign * (parseInt(match[2]) * 60 + parseInt(match[3]))
-}
