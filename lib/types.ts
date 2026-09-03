@@ -18,6 +18,10 @@ export interface Category {
   slug: string
   icon: string
   color: string
+  // Ordre d'affichage choisi dans l'admin (flèches haut/bas). Toutes les listes
+  // trient par display_order puis name — le name départage si deux catégories
+  // partagent la même valeur, pour que l'ordre reste déterministe.
+  display_order: number
   created_at: string
 }
 
@@ -109,19 +113,17 @@ export interface ImportSummary {
   created_at: string
 }
 
-// Category display metadata
+// Couleurs des pastilles de catégorie.
+//
+// Contrairement à l'icône — qui vient désormais de `categories.icon` en base — la
+// couleur reste codée ici : la colonne `categories.color` stocke un nom court
+// ("blue"), pas la paire de classes attendue, et Tailwind ne peut de toute façon pas
+// générer une classe construite dynamiquement au runtime. Rendre la couleur éditable
+// demanderait une palette fermée mappée ici, pas une simple lecture de la colonne.
 export const CATEGORY_COLORS: Record<string, string> = {
   'sorties-enfants':  'bg-pink-100 text-pink-800',
   'agenda':           'bg-purple-100 text-purple-800',
   'sports':           'bg-orange-100 text-orange-800',
   'travaux':          'bg-yellow-100 text-yellow-800',
   'guinguettes':      'bg-teal-100 text-teal-800',
-}
-
-export const CATEGORY_ICONS: Record<string, string> = {
-  'sorties-enfants':  '🎠',
-  'agenda':           '📅',
-  'sports':           '⚽',
-  'travaux':          '🚧',
-  'guinguettes':      '🍻',
 }

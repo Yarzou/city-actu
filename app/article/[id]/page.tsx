@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ExternalLink, ArrowLeft, Calendar, Globe } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDateShort } from '@/lib/utils'
-import { CATEGORY_COLORS, CATEGORY_ICONS } from '@/lib/types'
+import { CATEGORY_COLORS } from '@/lib/types'
 import { FavoriteButton } from '@/components/articles/FavoriteButton'
 import type { Article } from '@/lib/types'
 
@@ -24,7 +24,7 @@ export default function ArticlePage() {
       const [{ data: art }, { data: { user } }] = await Promise.all([
         supabase
           .from('articles')
-          .select('*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug)')
+          .select('*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug)')
           .eq('id', id)
           .single(),
         supabase.auth.getUser(),
@@ -75,7 +75,7 @@ export default function ArticlePage() {
 
   const categorySlug  = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
-  const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
+  const categoryIcon  = article.category?.icon || '📰'
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">

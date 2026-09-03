@@ -4,7 +4,7 @@ import { useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
 import { ExternalLink, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
-import { CATEGORY_COLORS, CATEGORY_ICONS } from '@/lib/types'
+import { CATEGORY_COLORS } from '@/lib/types'
 import type { Article } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
 
@@ -24,7 +24,7 @@ const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
 export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext, scrollRestoreCount }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
-  const categoryIcon  = CATEGORY_ICONS[categorySlug] ?? '📰'
+  const categoryIcon  = article.category?.icon || '📰'
 
   const displayDate = article.published_at
     ? formatEventDateRange(article.published_at, article.event_end_date ?? null)

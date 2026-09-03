@@ -9,7 +9,6 @@ import { ArticleCard } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter, type DateRange } from './DateFilter'
 import { MiniCalendar } from './MiniCalendar'
-import { CATEGORY_ICONS } from '@/lib/types'
 import type { Article as ArticleType, Category as CategoryType } from '@/lib/types'
 import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
 
@@ -127,7 +126,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
 
     let query = supabase
       .from('articles')
-      .select('*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug)')
+      .select('*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug)')
       .eq('city_id', city.id)
       .eq('is_duplicate', false)
 
@@ -230,7 +229,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
       const { data: { user } } = await supabase.auth.getUser()
       setUserId(user?.id ?? null)
 
-      const { data: cats } = await supabase.from('categories').select('*').order('name')
+      const { data: cats } = await supabase.from('categories').select('*').order('display_order').order('name')
       setCategories(cats ?? [])
 
       await fetchArticles(true, null, requestedInitialCount)
@@ -418,7 +417,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-2xl font-bold text-gray-900">
               {currentCategory
-                ? `${CATEGORY_ICONS[currentCategory.slug] ?? '📰'} ${currentCategory.name}`
+                ? `${currentCategory.icon || '📰'} ${currentCategory.name}`
                 : cityName || citySlug}
             </h1>
             {userId && canManageContent && (
@@ -511,7 +510,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
                     : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
                 )}
               >
-                <span>{CATEGORY_ICONS[cat.slug] ?? '📰'}</span>
+                <span>{cat.icon || '📰'}</span>
                 {cat.name}
               </Link>
             ))}

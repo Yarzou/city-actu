@@ -33,7 +33,7 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
 
       const { data: favs } = await supabase
         .from('user_favorites')
-        .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug), city:cities(id,name,slug))')
+        .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug))')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 

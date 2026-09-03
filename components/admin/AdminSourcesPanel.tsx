@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, Rss, Tags, Palette } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags, Palette } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
@@ -124,6 +124,7 @@ export function AdminSourcesPanel() {
   const [editingCategory, setEditingCategory]   = useState<number | null>(null)
   const [editCategoryData, setEditCategoryData] = useState({ name: '', slug: '', icon: '', color: '' })
   const [savingCategory, setSavingCategory]     = useState(false)
+  const [reorderingCategory, setReorderingCategory] = useState(false)
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [newCategory, setNewCategory]           = useState({ name: '', slug: '', icon: '', color: '' })
   const [deletingAll, setDeletingAll]           = useState(false)
@@ -154,7 +155,7 @@ export function AdminSourcesPanel() {
       const supabase = createClient()
       const [{ data: src }, { data: cats }, { data: cts }, { data: summaries }] = await Promise.all([
         supabase.from('sources').select('*, city:cities(id,name), category:categories(id,name,slug)').order('name'),
-        supabase.from('categories').select('*').order('name'),
+        supabase.from('categories').select('*').order('display_order').order('name'),
         supabase.from('cities').select('*').order('name'),
         supabase.from('import_summaries').select('*').order('created_at', { ascending: false }).limit(20),
       ])
@@ -273,11 +274,20 @@ export function AdminSourcesPanel() {
   async function addCategory(e: React.FormEvent) {
     e.preventDefault()
     const supabase = createClient()
+    // Une nouvelle catégorie se pose en fin de liste : l'ordre est éditorial depuis
+    // qu'il est réglable à la main, l'insérer alphabétiquement au milieu déplacerait
+    // silencieusement ce que l'admin a choisi.
+    const nextOrder = categories.length
+      ? Math.max(...categories.map(c => c.display_order)) + 10
+      : 10
     const { data, error } = await supabase.from('categories')
-      .insert({ name: newCategory.name, slug: newCategory.slug || toSlug(newCategory.name), icon: newCategory.icon, color: newCategory.color })
+      // icon vide → l'emoji par défaut plutôt qu'une chaîne vide : l'icône est
+      // maintenant lue depuis la base pour l'affichage public, une catégorie sans
+      // icône laisserait un trou dans la barre de filtres.
+      .insert({ name: newCategory.name, slug: newCategory.slug || toSlug(newCategory.name), icon: newCategory.icon || '📰', color: newCategory.color, display_order: nextOrder })
       .select('*').single()
     if (!error && data) {
-      setCategories(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+      setCategories(prev => [...prev, data])
       setNewCategory({ name: '', slug: '', icon: '', color: '' })
       setShowCategoryForm(false)
     }
@@ -287,10 +297,10 @@ export function AdminSourcesPanel() {
     setSavingCategory(true)
     const supabase = createClient()
     const { error } = await supabase.from('categories')
-      .update({ name: editCategoryData.name, slug: editCategoryData.slug, icon: editCategoryData.icon, color: editCategoryData.color })
+      .update({ name: editCategoryData.name, slug: editCategoryData.slug, icon: editCategoryData.icon || '📰', color: editCategoryData.color })
       .eq('id', id)
     if (!error) {
-      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...editCategoryData } : c))
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...editCategoryData, icon: editCategoryData.icon || '📰' } : c))
       setEditingCategory(null)
     }
     setSavingCategory(false)
@@ -307,6 +317,46 @@ export function AdminSourcesPanel() {
         setCategories(prev => prev.filter(c => c.id !== id))
       }
     )
+  }
+
+  /**
+   * Déplace une catégorie d'un cran, en échangeant son display_order avec celui de
+   * sa voisine. La liste est déjà triée, donc permuter deux voisines la garde triée
+   * sans re-tri.
+   *
+   * Mise à jour optimiste : la ligne bouge tout de suite, puis on persiste. Les deux
+   * UPDATE ne sont pas transactionnels — si l'un échoue, on restaure l'affichage.
+   * Même si une écriture partielle laissait deux catégories à égalité en base, le tri
+   * `display_order, name` reste déterministe (départage par nom) plutôt que d'osciller
+   * d'un chargement à l'autre, et un nouveau clic répare.
+   */
+  async function moveCategory(id: number, direction: 'up' | 'down') {
+    const index = categories.findIndex(c => c.id === id)
+    const swapIndex = direction === 'up' ? index - 1 : index + 1
+    if (index === -1 || swapIndex < 0 || swapIndex >= categories.length) return
+
+    const current = categories[index]
+    const neighbour = categories[swapIndex]
+    const previous = categories
+
+    const next = [...categories]
+    next[index]     = { ...neighbour, display_order: current.display_order }
+    next[swapIndex] = { ...current,   display_order: neighbour.display_order }
+
+    setCategories(next)
+    setReorderingCategory(true)
+
+    const supabase = createClient()
+    const [{ error: errorA }, { error: errorB }] = await Promise.all([
+      supabase.from('categories').update({ display_order: neighbour.display_order }).eq('id', current.id),
+      supabase.from('categories').update({ display_order: current.display_order }).eq('id', neighbour.id),
+    ])
+
+    if (errorA || errorB) {
+      setCategories(previous)
+      setAdminFeedback({ ok: false, msg: `Réordonnancement impossible : ${(errorA ?? errorB)!.message}` })
+    }
+    setReorderingCategory(false)
   }
 
   async function detectScrapingConfig(url: string) {
@@ -1233,7 +1283,7 @@ export function AdminSourcesPanel() {
         {categoriesOpen && (
           <div className="p-4 space-y-3">
             {/* Existing categories */}
-            {categories.map(cat => (
+            {categories.map((cat, index) => (
               <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-3">
                 {editingCategory === cat.id ? (
                   <div className="space-y-3">
@@ -1284,6 +1334,16 @@ export function AdminSourcesPanel() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => moveCategory(cat.id, 'up')}
+                        disabled={index === 0 || reorderingCategory}
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors" title="Monter">
+                        <ArrowUp className="size-4" />
+                      </button>
+                      <button onClick={() => moveCategory(cat.id, 'down')}
+                        disabled={index === categories.length - 1 || reorderingCategory}
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors" title="Descendre">
+                        <ArrowDown className="size-4" />
+                      </button>
                       <button onClick={() => { setEditCategoryData({ name: cat.name, slug: cat.slug, icon: cat.icon ?? '', color: cat.color ?? '' }); setEditingCategory(cat.id) }}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Éditer">
                         <Pencil className="size-4" />

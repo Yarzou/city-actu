@@ -44,4 +44,7 @@
   <!-- Type de source "opendata" : agenda Nantes Métropole + flux RSS retrouvé de la mairie -->
   <include file="liquibase/changelog/013-opendata-agenda.sql"/>
 
+  <!-- Ordre d'affichage manuel des catégories (flèches haut/bas dans l'admin) -->
+  <include file="liquibase/changelog/014-category-order.sql"/>
+
 </databaseChangeLog>
