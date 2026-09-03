@@ -2,7 +2,7 @@
 
 import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
 import type { FeedArticle } from '@/lib/types'
@@ -136,7 +136,7 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
               n'est pas un départ vers l'extérieur, il ne doit pas armer la
               restauration de scroll.
             */}
-            {article.published_at && (
+            {article.published_at ? (
               <a
                 href={`/api/calendar/${article.id}.ics`}
                 className="inline-flex items-center justify-center p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
@@ -144,6 +144,21 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
               >
                 <CalendarPlus className="size-4" />
               </a>
+            ) : (
+              // Article sans date : le bouton reste en place, barré, plutôt que de
+              // disparaître — l'absence laissait croire à un oubli, surtout dans les
+              // favoris où beaucoup d'actus de la mairie n'ont pas de date.
+              //
+              // Un <span> et non un <button disabled> : les éléments désactivés ne
+              // reçoivent pas les événements souris, donc l'infobulle qui explique
+              // pourquoi ne s'afficherait pas de façon fiable.
+              <span
+                aria-disabled="true"
+                className="inline-flex items-center justify-center p-1.5 rounded-lg text-gray-300 cursor-not-allowed"
+                title="Pas d'agenda possible : la source ne donne pas de date pour cette actu"
+              >
+                <CalendarX className="size-4" />
+              </span>
             )}
             {canDelete && onDelete && (
               <button
