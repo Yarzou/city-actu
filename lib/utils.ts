@@ -53,8 +53,8 @@ export function normalizeSearchText(input: string): string {
     .trim()
 }
 
-export function groupByDay(articles: Article[]): Map<string, Article[]> {
-  const map = new Map<string, Article[]>()
+export function groupByDay<T extends Pick<Article, 'published_at'>>(articles: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>()
   for (const article of articles) {
     const key = article.published_at
       ? format(new Date(article.published_at), 'yyyy-MM-dd')

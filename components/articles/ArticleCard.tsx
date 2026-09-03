@@ -1,15 +1,15 @@
 'use client'
 
-import { useRef, useLayoutEffect, useState } from 'react'
+import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
 import { ExternalLink, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
-import type { Article } from '@/lib/types'
+import type { FeedArticle } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
 
 interface ArticleCardProps {
-  article: Article
+  article: FeedArticle
   userId?: string | null
   isFavorited?: boolean
   canDelete?: boolean
@@ -17,11 +17,16 @@ interface ArticleCardProps {
   onDelete?: (articleId: number) => void
   scrollRestoreContext?: string
   scrollRestoreCount?: number
+  /** Charge l'image sans attendre le lazy-loading : à réserver aux cartes de la première vue. */
+  priority?: boolean
 }
 
 const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
 
-export function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext, scrollRestoreCount }: ArticleCardProps) {
+// Mémoïsé : sans ça toute la grille se re-rendait à chaque changement d'état du feed
+// (frappe dans la recherche, bandeau de feedback…), et chaque carte refait une mesure
+// DOM synchrone dans son useLayoutEffect.
+export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = article.category?.icon || '📰'
@@ -65,6 +70,7 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
             fill
             className="object-cover"
             unoptimized
+            priority={priority}
           />
         </div>
       )}
@@ -146,4 +152,4 @@ export function ArticleCard({ article, userId, isFavorited = false, canDelete = 
       </div>
     </article>
   )
-}
+})

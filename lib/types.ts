@@ -77,6 +77,21 @@ export interface Article {
   city?: City
 }
 
+/**
+ * Sous-ensemble d'`Article` réellement consommé par le feed et les cartes.
+ *
+ * Le feed ne demande plus `select('*')` : les colonnes générées `title_search` et
+ * `content_preview_search` (migration 010) dupliquent le titre et la description, et
+ * les identifiants bruts comme `is_duplicate`/`fetched_at` ne sont jamais lus au rendu.
+ * Un `Article` complet reste assignable ici, donc les écrans qui chargent tout
+ * (favoris, page article) continuent de fonctionner sans changement.
+ */
+export type FeedArticle =
+  Pick<Article, 'id' | 'title' | 'content_preview' | 'url' | 'image_url' | 'published_at' | 'event_end_date'> & {
+    source?: Pick<Source, 'name'>
+    category?: Pick<Category, 'id' | 'name' | 'slug' | 'icon'>
+  }
+
 export interface UserFavorite {
   user_id: string
   article_id: number

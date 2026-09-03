@@ -9,7 +9,7 @@ import { ArticleCard } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter, type DateRange } from './DateFilter'
 import { MiniCalendar } from './MiniCalendar'
-import type { Article as ArticleType, Category as CategoryType } from '@/lib/types'
+import type { FeedArticle, Category as CategoryType } from '@/lib/types'
 import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
 
 const PAGE_SIZE = 20
@@ -73,6 +73,14 @@ function clearExternalScrollSnapshot() {
   window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
 }
 
+/** Identifiants résolus une fois au montage, réutilisés par toutes les requêtes du feed. */
+interface FeedContext {
+  cityId: number
+  cityName: string
+  categoryId: number | null
+  excludeCategoryId: number | null
+}
+
 interface ArticleFeedProps {
   citySlug: string
   categorySlug?: string
@@ -84,7 +92,7 @@ interface ArticleFeedProps {
 }
 
 export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canManageContent = false, hideHeader = false, hideMiniCalendar = false, hideCategoryTabs = false }: ArticleFeedProps) {
-  const [articles, setArticles]     = useState<ArticleType[]>([])
+  const [articles, setArticles]     = useState<FeedArticle[]>([])
   const [categories, setCategories] = useState<CategoryType[]>([])
   const [cityName, setCityName]     = useState<string>('')
   const [userId, setUserId]         = useState<string | null>(null)
@@ -102,6 +110,17 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
   const hasInitializedRef = useRef(false)
+  // Ville et catégories résolues une seule fois au montage : ce sont des props,
+  // elles ne changent pas en cours de session. Avant, chaque appel de fetchArticles
+  // et de fetchActiveDates les re-résolvait par une requête dédiée — jusqu'à trois
+  // requêtes `cities` pour un seul affichage.
+  const contextRef = useRef<FeedContext | null>(null)
+  // Miroir de `offset` : permet à fetchArticles de lire la pagination sans avoir
+  // `offset` en dépendance de son useCallback (qui se recréait à chaque page).
+  const offsetRef = useRef(0)
+  // Jeton de séquence : une réponse qui arrive après un nouveau reset est ignorée,
+  // sinon un filtre abandonné peut écraser l'affichage courant.
+  const generationRef = useRef(0)
   // Frozen at mount so every page of the default feed shares the same lower bound.
   const horizonRef = useRef(startOfDay(new Date()).toISOString())
   const restoredContextRef = useRef<string | null>(null)
@@ -111,33 +130,33 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
   )
 
   const fetchArticles = useCallback(async (reset: boolean, range: DateRange | null = dateRange, resetTargetCount = PAGE_SIZE) => {
+    const context = contextRef.current
+    if (!context) return
+
     const supabase = createClient()
-    const currentOffset = reset ? 0 : offset
+    const currentOffset = reset ? 0 : offsetRef.current
     const effectiveTargetCount = reset ? Math.max(PAGE_SIZE, resetTargetCount) : PAGE_SIZE
     const rangeEnd = reset
       ? currentOffset + effectiveTargetCount - 1
       : currentOffset + PAGE_SIZE - 1
 
-    const { data: city } = await supabase
-      .from('cities').select('id,name').eq('slug', citySlug).single()
-    if (!city) return
+    // Un reset ouvre une nouvelle génération ; une pagination reste dans la courante.
+    const generation = reset ? ++generationRef.current : generationRef.current
 
-    setCityName(city.name)
-
+    // Colonnes explicites plutôt que `*` : title_search et content_preview_search sont
+    // des copies normalisées du titre et de la description (colonnes générées de la
+    // migration 010), utiles au ilike côté serveur et jamais lues ici — les ramener
+    // doublait presque le poids utile. La jointure `city` n'était pas lue non plus.
     let query = supabase
       .from('articles')
-      .select('*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug)')
-      .eq('city_id', city.id)
+      .select('id, title, content_preview, url, image_url, published_at, event_end_date, source:sources(name), category:categories(id,name,slug,icon)')
+      .eq('city_id', context.cityId)
       .eq('is_duplicate', false)
 
-    if (categorySlug) {
-      const { data: cat } = await supabase
-        .from('categories').select('id').eq('slug', categorySlug).single()
-      if (cat) query = query.eq('category_id', cat.id)
-    } else if (excludeCategorySlug) {
-      const { data: cat } = await supabase
-        .from('categories').select('id').eq('slug', excludeCategorySlug).single()
-      if (cat) query = query.neq('category_id', cat.id)
+    if (context.categoryId !== null) {
+      query = query.eq('category_id', context.categoryId)
+    } else if (context.excludeCategoryId !== null) {
+      query = query.neq('category_id', context.excludeCategoryId)
     }
 
     if (range) {
@@ -162,7 +181,13 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
       .order('fetched_at', { ascending: false })
       .range(currentOffset, rangeEnd)
 
-    const results = data ?? []
+    // Réponse d'une génération abandonnée (filtre ou recherche changé entre-temps) :
+    // l'appliquer ferait réapparaître des résultats obsolètes.
+    if (generation !== generationRef.current) return
+
+    // PostgREST type les jointures « vers-un » comme des tableaux ; `source` et
+    // `category` sont bien des objets uniques ici (relations par clé étrangère).
+    const results = (data ?? []) as unknown as FeedArticle[]
     const requestedSize = reset ? effectiveTargetCount : PAGE_SIZE
     setHasMore(results.length === requestedSize)
     if (reset) {
@@ -170,28 +195,26 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
     } else {
       setArticles(prev => [...prev, ...results])
     }
-    setOffset(currentOffset + results.length)
-  }, [citySlug, categorySlug, excludeCategorySlug, offset, dateRange, searchQuery])
+    offsetRef.current = currentOffset + results.length
+    setOffset(offsetRef.current)
+  }, [dateRange, searchQuery])
 
   const fetchActiveDates = useCallback(async (month: Date) => {
-    const supabase = createClient()
-    const { data: city } = await supabase
-      .from('cities').select('id').eq('slug', citySlug).single()
-    if (!city) return
+    const context = contextRef.current
+    if (!context) return
 
+    const supabase = createClient()
     let query = supabase
       .from('articles')
       .select('published_at')
-      .eq('city_id', city.id)
+      .eq('city_id', context.cityId)
       .eq('is_duplicate', false)
       .gte('published_at', startOfMonth(month).toISOString())
       .lte('published_at', endOfMonth(month).toISOString())
       .not('published_at', 'is', null)
 
-    if (excludeCategorySlug) {
-      const { data: cat } = await supabase
-        .from('categories').select('id').eq('slug', excludeCategorySlug).single()
-      if (cat) query = query.neq('category_id', cat.id)
+    if (context.excludeCategoryId !== null) {
+      query = query.neq('category_id', context.excludeCategoryId)
     }
 
     const { data } = await query
@@ -200,7 +223,8 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
       format(new Date(a.published_at!), 'yyyy-MM-dd')
     ))]
     setActiveDates(dates)
-  }, [citySlug, excludeCategorySlug])
+    // Aucune dépendance : les identifiants viennent de contextRef, résolu au montage.
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -226,20 +250,51 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
         ? Math.min(Math.max(PAGE_SIZE, snapshot?.expectedCount ?? PAGE_SIZE), 200)
         : PAGE_SIZE
 
-      const { data: { user } } = await supabase.auth.getUser()
-      setUserId(user?.id ?? null)
+      // Le slug de catégorie à résoudre : soit celui qu'on filtre, soit celui qu'on
+      // exclut — jamais les deux, le rendu ne combine pas les deux modes.
+      const categorySlugToResolve = categorySlug ?? excludeCategorySlug
+      const noCategory = Promise.resolve({ data: null as { id: number } | null })
 
-      const { data: cats } = await supabase.from('categories').select('*').order('display_order').order('name')
+      // Vague 1 — rien ici ne dépend de rien d'autre : tout part ensemble.
+      const [{ data: { user } }, { data: cats }, { data: city }, { data: cat }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('categories').select('*').order('display_order').order('name'),
+        supabase.from('cities').select('id,name').eq('slug', citySlug).single(),
+        categorySlugToResolve
+          ? supabase.from('categories').select('id').eq('slug', categorySlugToResolve).single()
+          : noCategory,
+      ])
+
+      setUserId(user?.id ?? null)
       setCategories(cats ?? [])
 
-      await fetchArticles(true, null, requestedInitialCount)
-      await fetchActiveDates(calendarMonth)
-
-      if (user) {
-        const { data: favs } = await supabase
-          .from('user_favorites').select('article_id').eq('user_id', user.id)
-        setFavorites(new Set((favs ?? []).map((f: { article_id: number }) => f.article_id)))
+      if (!city) {
+        setLoading(false)
+        return
       }
+
+      contextRef.current = {
+        cityId: city.id,
+        cityName: city.name,
+        categoryId: categorySlug ? (cat?.id ?? null) : null,
+        excludeCategoryId: !categorySlug && excludeCategorySlug ? (cat?.id ?? null) : null,
+      }
+      setCityName(city.name)
+
+      // Vague 2 — dépend du contexte résolu ci-dessus, mais pas les unes des autres.
+      // fetchActiveDates n'alimente que le mini-calendrier : quand il est masqué
+      // (c'est le cas des deux onglets de CityHomePage, donc de la page d'accueil),
+      // la requête ramenait tous les articles du mois pour rien.
+      await Promise.all([
+        fetchArticles(true, null, requestedInitialCount),
+        hideMiniCalendar ? Promise.resolve() : fetchActiveDates(calendarMonth),
+        user
+          ? supabase.from('user_favorites').select('article_id').eq('user_id', user.id)
+              .then(({ data: favs }) =>
+                setFavorites(new Set((favs ?? []).map((f: { article_id: number }) => f.article_id)))
+              )
+          : Promise.resolve(),
+      ])
 
       hasInitializedRef.current = true
       setLoading(false)
@@ -247,7 +302,7 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
 
     init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [citySlug, categorySlug])
+  }, [citySlug, categorySlug, excludeCategorySlug])
 
   useEffect(() => {
     if (!hasInitializedRef.current) return
@@ -362,7 +417,9 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
 
-  async function handleDeleteArticle(articleId: number) {
+  // Identité stable : ArticleCard est mémoïsé, une fonction recréée à chaque render
+  // invaliderait la mémoïsation de toutes les cartes.
+  const handleDeleteArticle = useCallback(async (articleId: number) => {
     if (!userId || !canManageContent) {
       setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
       return
@@ -395,10 +452,12 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
       setDeletingArticleId(null)
       setTimeout(() => setRefreshFeedback(null), 5000)
     }
-  }
+  }, [userId, canManageContent])
 
   const currentCategory = categories.find(c => c.slug === categorySlug)
-  const grouped = dateRange ? groupByDay(articles) : null
+  // Mémoïsé : reparser toutes les dates du tableau à chaque render était inutile,
+  // et le coût grandit avec le nombre de pages chargées.
+  const grouped = useMemo(() => (dateRange ? groupByDay(articles) : null), [dateRange, articles])
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -572,10 +631,14 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
             // Default grid view (no date filter)
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {articles.map((article) => (
+                {articles.map((article, index) => (
                   <ArticleCard
                     key={article.id}
                     article={article}
+                    // Les premières cartes sont l'image la plus grande de la vue initiale
+                    // (le LCP) : les sortir du lazy-loading évite d'attendre un second
+                    // aller-retour après le premier rendu.
+                    priority={index < 4}
                     userId={userId}
                     isFavorited={favorites.has(article.id)}
                     canDelete={Boolean(userId && canManageContent)}
