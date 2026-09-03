@@ -15,6 +15,12 @@ export interface FetchedItem {
   image_url: string | null
   published_at: string | null
   event_end_date?: string | null
+  /**
+   * Lieu de l'événement, quand la source en expose un (open data, ou scraping avec
+   * `location_selector`). Un flux RSS n'a pas de champ de lieu normalisé : ces
+   * articles restent à null et l'export .ics retombe sur le nom de la ville.
+   */
+  location?: string | null
 }
 
 export async function fetchRssFeed(source: Source): Promise<FetchedItem[]> {

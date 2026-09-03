@@ -2,7 +2,7 @@
 
 import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
 import type { FeedArticle } from '@/lib/types'
@@ -126,6 +126,24 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
           <div className="flex items-center gap-1 shrink-0">
             {userId && (
               <FavoriteButton articleId={article.id} userId={userId} initialFavorited={isFavorited} />
+            )}
+            {/*
+              Lien simple, sans target="_blank" : sur iOS la navigation déclenche le
+              flux natif « Ajouter à Calendrier » sans réellement quitter la page, et
+              sur Android le fichier est confié à Google Agenda ou à l'appli par défaut.
+
+              Il n'appelle volontairement pas rememberScrollBeforeExternalOpen : ce
+              n'est pas un départ vers l'extérieur, il ne doit pas armer la
+              restauration de scroll.
+            */}
+            {article.published_at && (
+              <a
+                href={`/api/calendar/${article.id}.ics`}
+                className="inline-flex items-center justify-center p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+                title="Ajouter à mon agenda"
+              >
+                <CalendarPlus className="size-4" />
+              </a>
             )}
             {canDelete && onDelete && (
               <button

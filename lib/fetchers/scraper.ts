@@ -171,6 +171,9 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       const endDateEl = config.end_date_selector
         ? $(el).find(config.end_date_selector).first()
         : null
+      const locationEl = config.location_selector
+        ? $(el).find(config.location_selector).first()
+        : null
 
       const title = titleEl.text().trim()
       let url = linkEl.attr('href') ?? titleEl.closest('a').attr('href') ?? ''
@@ -198,7 +201,9 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       const published_at = dateText ? parseFrenchDate(dateText) : null
       const event_end_date = endDateText ? parseFrenchDate(endDateText) : null
 
-      items.push({ title, url, content_preview: content, image_url: image, published_at, event_end_date })
+      const location = locationEl?.text().replace(/\s+/g, ' ').trim().slice(0, 200) || null
+
+      items.push({ title, url, content_preview: content, image_url: image, published_at, event_end_date, location })
     })
 
     // If detail_date_selector is configured, enrich each item with dates from its detail page

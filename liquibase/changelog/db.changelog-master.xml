@@ -47,4 +47,7 @@
   <!-- Ordre d'affichage manuel des catégories (flèches haut/bas dans l'admin) -->
   <include file="liquibase/changelog/014-category-order.sql"/>
 
+  <!-- Localisation des articles : champ LOCATION des exports .ics -->
+  <include file="liquibase/changelog/015-article-location.sql"/>
+
 </databaseChangeLog>

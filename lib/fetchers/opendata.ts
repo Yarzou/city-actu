@@ -26,6 +26,7 @@ const FIELDS = {
   date:        ['date', 'date_debut', 'firstdate_begin', 'start_date', 'date_start'],
   time:        ['heure_debut', 'horaire_debut', 'start_time'],
   place:       ['lieu', 'nom_lieu', 'location', 'equipement'],
+  address:     ['adresse', 'adresse_complete', 'rue'],
   city:        ['ville', 'commune', 'city'],
   cancelled:   ['annule', 'cancelled'],
 }
@@ -132,10 +133,28 @@ function groupByEvent(rows: OdsRow[]): FetchedItem[] {
       image_url:       pick(row, FIELDS.image) ?? null,
       published_at,
       event_end_date:  end,
+      location:        buildLocation(row),
     })
   }
 
   return items
+}
+
+/**
+ * Lieu structuré « salle, adresse, ville », pour le champ LOCATION des exports .ics.
+ *
+ * Ces champs n'étaient jusqu'ici lus que par `buildPreview`, en repli quand la
+ * description manquait — donc perdus dans le cas courant. `adresse` n'était même pas
+ * dans la table d'alias.
+ */
+function buildLocation(row: OdsRow): string | null {
+  const parts = [
+    pick(row, FIELDS.place),
+    pick(row, FIELDS.address),
+    pick(row, FIELDS.city),
+  ].filter(Boolean)
+
+  return parts.length ? parts.join(', ') : null
 }
 
 function buildPreview(row: OdsRow): string | null {

@@ -52,6 +52,8 @@ export interface ScrapingConfig {
   image_selector?: string
   date_selector?: string
   end_date_selector?: string
+  // Lieu de l'événement, repris dans le champ LOCATION des exports .ics.
+  location_selector?: string
   detail_date_selector?: string
   base_url?: string
   // Optional case-insensitive regex: only keep items whose title matches.
@@ -70,6 +72,8 @@ export interface Article {
   image_url: string | null
   published_at: string | null
   event_end_date: string | null
+  /** Lieu de l'événement, alimenté par les fetchers open data et scraping. */
+  location: string | null
   fetched_at: string
   is_duplicate: boolean
   source?: Source

@@ -36,6 +36,7 @@ const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   image_selector: '',
   date_selector: '',
   end_date_selector: '',
+  location_selector: '',
   detail_date_selector: '',
   base_url: '',
 }
@@ -223,6 +224,7 @@ export function AdminSourcesPanel() {
       image_selector: cfg.image_selector ?? '',
       date_selector: cfg.date_selector ?? '',
       end_date_selector: cfg.end_date_selector ?? '',
+      location_selector: cfg.location_selector ?? '',
       detail_date_selector: cfg.detail_date_selector ?? '',
       base_url: cfg.base_url ?? '',
     })
@@ -1488,6 +1490,15 @@ function ScrapingConfigFields({
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
             placeholder='[itemprop="endDate"]' />
         </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Sélecteur lieu <span className="text-gray-400 font-normal">(pour « ajouter au calendrier »)</span>
+          </label>
+          <input value={config.location_selector ?? ''}
+            onChange={e => onChange({ ...config, location_selector: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            placeholder='.lieu, [itemprop="location"]' />
+        </div>
         <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Sélecteur date sur page détail
@@ -1521,6 +1532,7 @@ function buildScrapingConfig(c: ScrapingConfig): ScrapingConfig {
   if (c.date_selector)           config.date_selector           = c.date_selector
   if (c.end_date_selector)       config.end_date_selector       = c.end_date_selector
   if (c.detail_date_selector)    config.detail_date_selector    = c.detail_date_selector
+  if (c.location_selector)       config.location_selector       = c.location_selector
   if (c.base_url)                config.base_url                = c.base_url
   return config
 }
