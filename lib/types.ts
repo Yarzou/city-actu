@@ -1,4 +1,4 @@
-export type SourceType = 'rss' | 'scraping'
+export type SourceType = 'rss' | 'scraping' | 'opendata'
 
 export type FetchStatus = 'ok' | 'error'
 

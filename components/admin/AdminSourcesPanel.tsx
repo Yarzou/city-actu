@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, Rss, Tags, Palette } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import type { Source, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
+import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
@@ -15,6 +15,18 @@ const THEME_OPTIONS: { value: ThemeChoice; label: string; title: string }[] = [
   { value: 'dark',   label: '🌙', title: 'Sombre' },
   { value: 'system', label: '💻', title: 'Système' },
 ]
+
+const SOURCE_TYPE_BADGE: Record<SourceType, string> = {
+  rss:      'bg-blue-100 text-blue-700',
+  scraping: 'bg-orange-100 text-orange-700',
+  opendata: 'bg-teal-100 text-teal-700',
+}
+
+const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
+  rss:      'RSS',
+  scraping: 'SCRAPING',
+  opendata: 'OPEN DATA',
+}
 
 const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   list_selector: '',
@@ -132,7 +144,7 @@ export function AdminSourcesPanel() {
     category_id: '',
     name: '',
     url: '',
-    type: 'rss' as 'rss' | 'scraping',
+    type: 'rss' as SourceType,
     active: true,
   })
   const [scrapingConfig, setScrapingConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
@@ -828,11 +840,18 @@ export function AdminSourcesPanel() {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as 'rss' | 'scraping' }))}
+              <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as SourceType }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="rss">RSS</option>
                 <option value="scraping">Scraping</option>
+                <option value="opendata">Open Data</option>
               </select>
+              {form.type === 'opendata' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Coller l&apos;URL complète d&apos;une API Opendatasoft (<code>…/records?where=…</code>) —
+                  le filtre ODSQL fait office de configuration, il n&apos;y a pas de sélecteurs à saisir.
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 pt-4">
               <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
@@ -895,9 +914,8 @@ export function AdminSourcesPanel() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
-                  source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
-                  {source.type.toUpperCase()}
+                <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', SOURCE_TYPE_BADGE[source.type])}>
+                  {SOURCE_TYPE_LABEL[source.type]}
                 </span>
                 {(source.category as Category | undefined)?.name && (
                   <span className="text-xs text-gray-500">{(source.category as Category | undefined)?.name}</span>
@@ -1059,9 +1077,8 @@ export function AdminSourcesPanel() {
                       {(source.category as Category | undefined)?.name ?? '—'}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium',
-                        source.type === 'rss' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}>
-                        {source.type.toUpperCase()}
+                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', SOURCE_TYPE_BADGE[source.type])}>
+                        {SOURCE_TYPE_LABEL[source.type]}
                       </span>
                     </td>
                     <td className="px-4 py-3">

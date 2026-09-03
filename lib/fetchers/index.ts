@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { fetchRssFeed } from './rss'
 import { fetchScrapingSource } from './scraper'
+import { fetchOpenDataSource } from './opendata'
 import type { Source } from '@/lib/types'
 
 // Use service role to bypass RLS during cron writes
@@ -28,10 +29,17 @@ export interface FetchResult {
 export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]> {
   const supabase = getServiceClient()
 
+  // Ordre explicite, et non celui que Postgres renvoie au hasard : plusieurs sources
+  // peuvent exposer la même page (le flux RSS de la mairie et le scraping de /agenda
+  // pointent sur les mêmes nodes). articles.url étant UNIQUE, la première passée gagne
+  // et les suivantes sont comptées en doublons. Trier par id fait gagner la plus
+  // anciennement déclarée — ici le scraping de /agenda, qui va chercher la vraie date
+  // d'événement sur la page détail, là où le RSS ne porte que la date de publication.
   let query = supabase
     .from('sources')
     .select('*, city:cities(id,slug), category:categories(id,slug)')
     .eq('active', true)
+    .order('id', { ascending: true })
 
   if (citySlug) {
     const { data: city } = await supabase.from('cities').select('id').eq('slug', citySlug).single()
@@ -93,14 +101,18 @@ async function fetchSource(source: Source): Promise<FetchResult> {
     return finish()
   }
 
-  const items = source.type === 'rss'
-    ? await fetchRssFeed(source)
-    : await fetchScrapingSource(source)
+  const items =
+    source.type === 'rss'      ? await fetchRssFeed(source)      :
+    source.type === 'opendata' ? await fetchOpenDataSource(source) :
+                                 await fetchScrapingSource(source)
 
   result.fetched = items.length
   if (items.length === 0) {
     if (!result.errors.length) {
-      result.errors.push(`Aucun article récupéré pour "${source.name}" — vérifiez l'URL et les sélecteurs`)
+      const hint = source.type === 'scraping'
+        ? "vérifiez l'URL et les sélecteurs"
+        : "vérifiez l'URL de la source"
+      result.errors.push(`Aucun article récupéré pour "${source.name}" — ${hint}`)
     }
     return finish()
   }
