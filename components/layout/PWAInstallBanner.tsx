@@ -98,7 +98,9 @@ export default function PWAInstallBanner() {
   if (!visible) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-safe pointer-events-none">
+    // `bottom-16` sur mobile : la barre de navigation basse occupe désormais le bas
+    // de l'écran, le bandeau se posait par-dessus.
+    <div className="fixed bottom-16 sm:bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-safe pointer-events-none">
       <div className="pointer-events-auto w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 pt-4 pb-3">

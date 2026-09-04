@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Le thème sombre est piloté par une classe posée sur <html> par le script inline du
+   layout (anti-flash), pas par prefers-color-scheme seul. Cette déclaration est ce
+   qui rend les utilitaires `dark:` utilisables avec ce mécanisme — sans elle, la
+   seule option restait la feuille d'overrides manuelle en bas de ce fichier. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Brand (vert) */
   --color-brand-50:  #f0fdf4;
@@ -27,11 +33,18 @@
 :root {
   --background: #f9fafb;
   --foreground: #111827;
-  /* Safe area insets (iPhone notch / home indicator) */
-  --sat: env(safe-area-inset-top);
-  --sar: env(safe-area-inset-right);
-  --sab: env(safe-area-inset-bottom);
-  --sal: env(safe-area-inset-left);
+  /* Safe area insets (iPhone notch / home indicator).
+     Avec repli explicite : sans `, 0px`, un navigateur qui ne connaît pas `env()`
+     invalide toute la déclaration et les calc() qui en dépendent s'effondrent. */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* Hauteur réelle de l'en-tête fixe : 4rem de contenu plus l'encoche.
+     Le layout décalait <main> d'un `pt-16` en dur, faux de la hauteur de la barre
+     d'état dès que l'app tourne en PWA standalone avec viewportFit: cover. */
+  --header-h: calc(4rem + var(--sat));
 }
 
 body {
@@ -44,7 +57,7 @@ body {
 
 /* Safe-area bottom padding utility (home indicator on iPhone) */
 .pb-safe {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: max(1rem, var(--sab));
 }
 
 /* Hide scrollbar while keeping scroll functionality */
@@ -56,14 +69,38 @@ body {
   display: none;
 }
 
-/* Minimum tap target size for accessibility */
-button, a {
-  min-height: 44px;
-  min-width: 44px;
+/* Anneau de focus commun.
+   Il n'existait aucun style de focus hors du champ de recherche : boutons, pastilles
+   et actions de carte s'en remettaient au contour par défaut du navigateur, que
+   plusieurs d'entre eux masquaient. `:focus-visible` ne se déclenche pas au clic
+   souris, donc l'anneau ne pollue pas l'usage pointeur. */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
 }
 
-/* Override for inline/text links that shouldn't be 44px tall */
-p a, .inline-link {
+/* Affordance de défilement horizontal (catégories, pastilles de date, onglets).
+   Ces rangées sont en `overflow-x` avec la barre de défilement masquée : rien
+   n'indiquait qu'il restait du contenu hors écran. Le dégradé n'est appliqué que
+   sous le point de rupture `sm`, où ces rangées débordent effectivement — au-delà
+   elles passent en `flex-wrap` et tiennent sur plusieurs lignes.
+
+   Limite assumée : le dégradé de droite reste visible même arrivé en fin de course.
+   Le corriger demanderait des animations liées au défilement, encore trop peu
+   répandues, ou du JavaScript sur un événement de scroll. */
+@media (max-width: 639px) {
+  .edge-fade {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+  }
+}
+
+/* Les liens en pleine ligne de texte ne doivent pas hériter d'un cadre de bouton.
+   Classe conservée : elle servait d'échappatoire à la règle globale
+   `button, a { min-height: 44px }`, supprimée depuis (elle gonflait indistinctement
+   pastilles, liens de pied de page et fil d'Ariane, et forçait les cellules du
+   mini-calendrier à 44px de large dans un conteneur de 256px). Les cibles tactiles
+   sont désormais dimensionnées là où elles vivent, par du vrai `padding`. */
+.inline-link {
   min-height: unset;
   min-width: unset;
 }
@@ -120,8 +157,11 @@ html.dark select {
 html.dark input::placeholder,
 html.dark textarea::placeholder { color: #64748b !important; }
 
-/* Navbar / Footer */
-html.dark header.fixed,
+/* Navbar / Footer / barre de navigation basse.
+   Ciblé par `data-chrome` et non plus par `header.fixed` : la feuille était couplée
+   à la classe de positionnement de la barre, qui a changé avec la gestion de
+   l'encoche. */
+html.dark [data-chrome],
 html.dark footer { background-color: #1e293b !important; border-color: #334155 !important; }
 
 /* Divisions / séparateurs */
@@ -205,5 +245,7 @@ html.dark .bg-pink-50    { background-color: rgba(131,24,67,0.25) !important; }
 html.dark .bg-pink-100   { background-color: rgba(131,24,67,0.40) !important; }
 html.dark .text-pink-800 { color: #f9a8d4 !important; }
 
-/* ─── Images : atténuation fond blanc ───────────────────────────────────── */
-html.dark img { filter: brightness(0.9) saturate(0.95); }
+/* Le filtre `html.dark img { filter: brightness(.9) saturate(.95) }` a été retiré :
+   il imposait une passe de compositing sur chaque vignette du feed — coût
+   mesurable au défilement sur un Android milieu de gamme — pour ternir toutes les
+   photos, y compris celles déjà sombres. */

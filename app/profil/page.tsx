@@ -5,8 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from '@/components/articles/ArticleCard'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
+import dynamic from 'next/dynamic'
 import { LogOut, Heart, Settings } from 'lucide-react'
-import { AdminSourcesPanel } from '@/components/admin/AdminSourcesPanel'
+// Chargé à la demande : c'est le plus gros composant du projet (~1 500 lignes), et il
+// partait dans le chunk de /profil pour tout utilisateur connecté, y compris ceux qui
+// n'ont pas l'onglet Admin et ne peuvent donc jamais l'atteindre.
+const AdminSourcesPanel = dynamic(
+  () => import('@/components/admin/AdminSourcesPanel').then((m) => m.AdminSourcesPanel),
+  { loading: () => <div className="h-64 animate-pulse rounded-2xl bg-gray-100" /> }
+)
 import type { Article as ArticleType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { resolveAdminStatusClient } from '@/lib/admin-client'

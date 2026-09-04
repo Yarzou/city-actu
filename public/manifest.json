@@ -1,15 +1,34 @@
 {
+  "id": "/la-chapelle-sur-erdre",
   "name": "Ville Actu — La Chapelle-sur-Erdre",
   "short_name": "Ville Actu",
   "description": "Actualités locales agrégées pour La Chapelle-sur-Erdre",
   "start_url": "/la-chapelle-sur-erdre",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#f9fafb",
   "theme_color": "#16a34a",
   "lang": "fr",
   "orientation": "portrait-primary",
   "categories": ["news", "local"],
+  "shortcuts": [
+    {
+      "name": "Actus",
+      "short_name": "Actus",
+      "url": "/la-chapelle-sur-erdre"
+    },
+    {
+      "name": "Guinguettes",
+      "short_name": "Guinguettes",
+      "url": "/la-chapelle-sur-erdre?tab=guinguettes"
+    },
+    {
+      "name": "Mes favoris",
+      "short_name": "Favoris",
+      "url": "/la-chapelle-sur-erdre?tab=favoris"
+    }
+  ],
   "icons": [
     {
       "src": "/icons/icon.svg",

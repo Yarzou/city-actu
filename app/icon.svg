@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#f0fdf4"/>
+  <g transform="translate(96, 96)" fill="none" stroke="#16a34a" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Newspaper icon (Lucide style, scaled to 320x320) -->
+    <path d="M70 48H250a22 22 0 0 1 22 22v180a22 22 0 0 1-22 22H70a22 22 0 0 1-22-22V70a22 22 0 0 1 22-22z"/>
+    <path d="M48 118h-16a22 22 0 0 0-22 22v80a22 22 0 0 0 22 22h16"/>
+    <line x1="96" y1="108" x2="224" y2="108"/>
+    <line x1="96" y1="148" x2="224" y2="148"/>
+    <line x1="96" y1="188" x2="160" y2="188"/>
+  </g>
+</svg>

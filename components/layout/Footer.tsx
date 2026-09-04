@@ -11,7 +11,7 @@ export function Footer() {
           <span>— Actualités de La Chapelle-sur-Erdre</span>
         </div>
         <nav className="flex items-center gap-4">
-          <Link href="/a-propos" className="hover:text-gray-900 transition-colors">À propos</Link>
+          <Link href="/a-propos" className="inline-link py-2 hover:text-gray-900 transition-colors focus-ring">À propos</Link>
         </nav>
         <p>© {new Date().getFullYear()} Ville Actu</p>
       </div>

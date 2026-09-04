@@ -7,7 +7,9 @@ interface SkeletonCardProps {
 export function SkeletonCard({ className }: SkeletonCardProps) {
   return (
     <div className={cn('bg-white rounded-2xl border border-gray-200 overflow-hidden animate-pulse', className)}>
-      <div className="h-40 bg-gray-200" />
+      {/* Même cadre que l'image de la carte réelle, sinon la mise en page saute
+          au moment où les squelettes cèdent la place au contenu. */}
+      <div className="aspect-[16/9] sm:aspect-auto sm:h-40 bg-gray-200" />
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="h-5 w-24 bg-gray-200 rounded-full" />

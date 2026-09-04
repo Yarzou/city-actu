@@ -1,115 +1,109 @@
 'use client'
 
-import { useRef } from 'react'
-import {
-  startOfDay, endOfDay, addDays,
-  nextSaturday, nextSunday,
-  isSaturday, isSunday,
-  format,
-} from 'date-fns'
-import { cn } from '@/lib/utils'
 import { CalendarDays } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import {
+  DATE_PRESETS,
+  DATE_PRESET_LABELS,
+  buildPresetRange,
+  buildSingleDayRange,
+  type DatePreset,
+  type DateRange,
+} from '@/lib/feed/date-params'
+import { parseCivilDate } from '@/lib/feed/paris-time'
 
-export interface DateRange {
-  from: Date
-  to: Date
-  label?: string
-}
+// Réexport : le type était historiquement défini ici et reste importé sous ce nom
+// par plusieurs composants. Sa définition, elle, a rejoint lib/feed/date-params
+// pour que le rendu serveur puisse l'utiliser (un composant 'use client' ne peut
+// pas servir de source de vérité partagée).
+export type { DateRange }
 
 interface DateFilterProps {
   value: DateRange | null
   onChange: (range: DateRange | null) => void
 }
 
-function buildRange(label: string): DateRange {
-  const now = new Date()
-  if (label === "Aujourd'hui") {
-    return { from: startOfDay(now), to: endOfDay(now), label }
-  }
-  if (label === 'Ce weekend') {
-    const sat = isSaturday(now) ? now : nextSaturday(now)
-    const sun = isSunday(now) ? now : nextSunday(sat)
-    return { from: startOfDay(sat), to: endOfDay(sun), label }
-  }
-  if (label === '7 prochains jours') {
-    return { from: startOfDay(now), to: endOfDay(addDays(now, 6)), label }
-  }
-  return { from: startOfDay(now), to: endOfDay(now), label }
-}
-
-const PILLS = ["Aujourd'hui", 'Ce weekend', '7 prochains jours'] as const
+/** Pastille : 44px de haut par vrai padding, plus par une règle CSS globale. */
+const PILL_BASE =
+  'shrink-0 snap-start min-h-11 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm border transition-colors focus-ring'
+const PILL_IDLE =
+  'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
+const PILL_ACTIVE = 'bg-brand-600 text-white border-brand-600'
 
 export function DateFilter({ value, onChange }: DateFilterProps) {
-  const dateInputRef = useRef<HTMLInputElement>(null)
+  const activePreset = DATE_PRESETS.find((p) => value?.label === DATE_PRESET_LABELS[p]) ?? null
+  const isCustomDay = Boolean(value) && activePreset === null
 
-  function handlePill(label: string) {
-    if (value?.label === label) {
+  function handlePreset(preset: DatePreset) {
+    if (activePreset === preset) {
       onChange(null)
     } else {
-      onChange(buildRange(label))
+      onChange(buildPresetRange(preset))
     }
   }
 
-  function handleDateInput(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!e.target.value) {
-      onChange(null)
-      return
-    }
-    const date = new Date(e.target.value + 'T12:00:00')
-    onChange({
-      from: startOfDay(date),
-      to: endOfDay(date),
-      label: format(date, 'dd/MM/yyyy'),
-    })
+  function handleDateInput(event: React.ChangeEvent<HTMLInputElement>) {
+    const civil = parseCivilDate(event.target.value)
+    onChange(civil ? buildSingleDayRange(civil) : null)
   }
 
   return (
-    <div className="flex flex-nowrap overflow-x-auto scrollbar-hide items-center gap-2 sm:flex-wrap">
-      {/* × clear button — only when a filter is active */}
+    <div
+      className="edge-fade flex flex-nowrap snap-x snap-mandatory overflow-x-auto scrollbar-hide items-center gap-2 sm:flex-wrap sm:snap-none"
+      role="group"
+      aria-label="Filtrer par date"
+    >
+      {/* Filtre actif : bouton d'annulation, affiché seulement quand il y a de quoi annuler */}
       {value && (
         <button
+          type="button"
           onClick={() => onChange(null)}
-          className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm border border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors"
+          aria-label={`Retirer le filtre ${value.label}`}
+          className={cn(PILL_BASE, 'border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100')}
         >
-          <span>×</span>
+          <span aria-hidden="true">×</span>
           {value.label}
         </button>
       )}
 
-      {PILLS.map((label) => (
+      {DATE_PRESETS.map((preset) => (
         <button
-          key={label}
-          onClick={() => handlePill(label)}
-          className={cn(
-            'shrink-0 px-3 py-1.5 rounded-full text-sm border transition-colors',
-            value?.label === label
-              ? 'bg-brand-600 text-white border-brand-600'
-              : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-          )}
+          key={preset}
+          type="button"
+          onClick={() => handlePreset(preset)}
+          aria-pressed={activePreset === preset}
+          className={cn(PILL_BASE, activePreset === preset ? PILL_ACTIVE : PILL_IDLE)}
         >
-          {label}
+          {DATE_PRESET_LABELS[preset]}
         </button>
       ))}
 
-      {/* Custom date button — mobile only (calendar handles this on desktop) */}
-      <button
-        onClick={() => dateInputRef.current?.showPicker?.()}
-        className={cn(
-          'shrink-0 sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors',
-          value && !PILLS.includes(value.label as typeof PILLS[number])
-            ? 'bg-brand-600 text-white border-brand-600'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-        )}
-      >
-        <CalendarDays className="size-3.5" />
-        Date…
-      </button>
-      <input
-        ref={dateInputRef}
-        type="date"
-        className="sr-only"
-        onChange={handleDateInput}
-      />
+      {/*
+        Choix d'une date précise — mobile seulement (le mini-calendrier s'en charge
+        sur desktop).
+
+        L'input est superposé au bouton en opacité nulle plutôt que caché en `sr-only`
+        et ouvert par `showPicker()` : cette méthode n'existe pas sur tous les
+        navigateurs mobiles, et le bouton « Date… » ne faisait alors strictement rien.
+        Ici c'est l'input lui-même qui reçoit le tap, donc le sélecteur natif s'ouvre
+        partout. Le libellé reste visible dessous, et `aria-label` nomme le champ —
+        il était jusqu'ici focusable et sans nom.
+      */}
+      <div className="relative shrink-0 snap-start sm:hidden">
+        <span
+          aria-hidden="true"
+          className={cn(PILL_BASE, isCustomDay ? PILL_ACTIVE : PILL_IDLE)}
+        >
+          <CalendarDays className="size-4" />
+          Date…
+        </span>
+        <input
+          type="date"
+          aria-label="Choisir une date précise"
+          onChange={handleDateInput}
+          className="absolute inset-0 size-full cursor-pointer opacity-0"
+        />
+      </div>
     </div>
   )
 }
