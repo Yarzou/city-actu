@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { GUINGUETTES_SLUG, isHomeTab, pushTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { Category } from '@/lib/types'
@@ -60,19 +60,8 @@ export function CityHomePage({
   const urlTab = searchParams.get('tab')
   const tab: HomeTab = isHomeTab(urlTab) ? urlTab : 'actus'
 
-  const selectTab = useCallback((next: HomeTab) => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    if (next === 'actus') params.delete('tab')
-    else params.set('tab', next)
-    // Changer d'onglet remet les filtres à zéro : ils portent sur un feed précis.
-    params.delete('d')
-    params.delete('q')
-    params.delete('cat')
-
-    const query = params.toString()
-    window.history.pushState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
-  }, [])
+  // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
+  const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
 
   async function handleRefresh() {
     setRefreshing(true)

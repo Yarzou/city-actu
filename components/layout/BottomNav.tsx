@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, Settings, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isHomeTab, pushTab, tabSearch, type HomeTab } from '@/lib/feed/tabs'
 
 /**
  * Navigation principale au pouce.
@@ -25,12 +26,12 @@ const HIDDEN_PREFIXES = ['/auth']
  * administrateur (voir `isAdmin`) : à 20% chacune, ~75px sur un écran de 375px, ce
  * que les libellés courts absorbent.
  */
-const TAB_ITEMS = [
-  { tab: null,          label: 'Actus',       icon: Newspaper },
+const TAB_ITEMS: { tab: HomeTab; label: string; icon: LucideIcon }[] = [
+  { tab: 'actus',       label: 'Actus',       icon: Newspaper },
   { tab: 'guinguettes', label: 'Guinguettes', icon: Wine },
   { tab: 'favoris',     label: 'Favoris',     icon: Heart },
   { tab: 'ia',          label: 'IA',          icon: Sparkles },
-] as const
+]
 
 interface BottomNavProps {
   /**
@@ -48,6 +49,13 @@ interface NavEntry {
   label: string
   icon: LucideIcon
   isActive: boolean
+  /**
+   * Onglet visé, quand l'entrée pointe sur la page ville déjà affichée. Le clic est
+   * alors traité en `pushState` plutôt qu'en navigation (voir `pushTab`). Absent pour
+   * les entrées qui changent réellement de route (« Admin »), ou quand on se trouve
+   * ailleurs que sur la racine de la ville — là, la navigation est nécessaire.
+   */
+  tab?: HomeTab
 }
 
 export function BottomNav({ isAdmin = false }: BottomNavProps) {
@@ -67,14 +75,16 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
 
   const cityRoot = `/${citySlug}`
   const onCityRoot = pathname === cityRoot
-  const activeTab = onCityRoot ? searchParams.get('tab') : null
+  const urlTab = searchParams.get('tab')
+  const activeTab: HomeTab | null = onCityRoot ? (isHomeTab(urlTab) ? urlTab : 'actus') : null
 
   const entries: NavEntry[] = TAB_ITEMS.map(({ tab, label, icon }) => ({
     key: label,
-    href: tab ? `${cityRoot}?tab=${tab}` : cityRoot,
+    href: `${cityRoot}${tabSearch(tab)}`,
     label,
     icon,
-    isActive: onCityRoot && activeTab === tab,
+    isActive: activeTab === tab,
+    tab: onCityRoot ? tab : undefined,
   }))
 
   if (isAdmin) {
@@ -95,10 +105,27 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
       style={{ paddingLeft: 'var(--sal)', paddingRight: 'var(--sar)' }}
     >
       <ul className="flex items-stretch">
-        {entries.map(({ key, href, label, icon: Icon, isActive }) => (
+        {entries.map(({ key, href, label, icon: Icon, isActive, tab }) => (
           <li key={key} className="flex-1">
             <Link
               href={href}
+              onClick={(event) => {
+                // Le `href` reste vrai — ouverture dans un onglet, copie du lien,
+                // lecteurs d'écran. Mais un clic simple sur un onglet de la ville
+                // déjà affichée ne doit pas repasser par le routeur : même route,
+                // seul le `?tab=` change, et une navigation complète coûtait
+                // `loading.tsx` + requête RSC + `queryArticles` rejoué côté serveur.
+                if (tab === undefined) return
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                if (event.button !== 0) return
+                event.preventDefault()
+                if (isActive) return
+                pushTab(tab)
+                // La navigation remontait en tête de page ; `pushState` ne le fait
+                // pas, et un onglet neuf ouvert au milieu du feed précédent paraît
+                // cassé.
+                window.scrollTo({ top: 0, behavior: 'auto' })
+              }}
               aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors focus-ring',
