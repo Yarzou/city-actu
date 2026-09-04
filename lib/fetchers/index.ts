@@ -46,14 +46,25 @@ export interface FetchResult {
  *                    annulerait ce masquage à chaque passage du cron.
  * - `source_id` / `city_id` / `category_id` : quand deux sources exposent la même URL, la
  *                    plus anciennement déclarée gagne (cf. le tri par id ci-dessous). Les
- *                    réécrire ferait basculer propriété et catégorie à chaque cron.
+ *                    réécrire ferait basculer propriété et catégorie à chaque cron. Elles
+ *                    voyagent bien dans le payload d'une mise à jour (`IDENTITY`, contrainte
+ *                    NOT NULL), mais recopiées depuis la ligne stockée, donc inchangées.
  * - `title_search` / `content_preview_search` : colonnes GENERATED, écriture interdite ;
  *                    Postgres les recalcule seul dès que `title` change.
  */
 const REFRESHABLE = ['title', 'content_preview', 'image_url', 'published_at', 'event_end_date', 'location'] as const
 
 type Refreshable = (typeof REFRESHABLE)[number]
-type StoredArticle = { url: string } & Record<Refreshable, string | null>
+
+/**
+ * Colonnes NOT NULL sans DEFAULT sur `articles`, hors `title` et `url` que tout patch
+ * porte déjà. Un patch doit les transporter — non pas pour les modifier, mais pour que le
+ * tuple proposé à l'INSERT franchisse la validation NOT NULL. Voir `updateKnown`.
+ */
+const IDENTITY = ['source_id', 'city_id', 'category_id'] as const
+
+type Identity = (typeof IDENTITY)[number]
+type StoredArticle = { url: string } & Record<Identity, number> & Record<Refreshable, string | null>
 
 const DATE_FIELDS = new Set<Refreshable>(['published_at', 'event_end_date'])
 
@@ -204,7 +215,9 @@ async function persistItems(source: Source, items: FetchedItem[], result: FetchR
   for (const urls of chunk([...byUrl.keys()], URL_BATCH_SIZE)) {
     const { data, error } = await supabase
       .from('articles')
-      .select('url, title, content_preview, image_url, published_at, event_end_date, location')
+      // Une seule chaîne littérale : PostgREST type le retour en analysant ce texte, une
+      // concaténation le dégrade en `GenericStringError`.
+      .select('url, source_id, city_id, category_id, title, content_preview, image_url, published_at, event_end_date, location')
       .in('url', urls)
 
     if (error) {
@@ -277,13 +290,17 @@ async function updateKnown(
   // lignes du lot partagent ainsi le même jeu de clés — PostgREST refuse l'inverse
   // (PGRST102) — sans jamais réintroduire de NULL. Un champ que la source n'expose pas ce
   // jour-là est réécrit à sa valeur actuelle.
-  const patches: Record<string, string | null>[] = []
+  const patches: Record<string, string | number | null>[] = []
 
   for (const item of batch) {
     const stored = existing.get(item.url)
     if (!stored) continue
 
-    const merged: Record<string, string | null> = { url: item.url }
+    const merged: Record<string, string | number | null> = { url: item.url }
+    // Recopiées telles quelles depuis la ligne existante, jamais depuis `source` : voir
+    // le commentaire de l'upsert plus bas. C'est ce qui garde la propriété à la source la
+    // plus anciennement déclarée quand deux sources exposent la même URL.
+    for (const field of IDENTITY) merged[field] = stored[field]
     let changed = false
 
     for (const field of REFRESHABLE) {
@@ -303,9 +320,21 @@ async function updateKnown(
 
   if (patches.length === 0) return
 
-  // is_duplicate, fetched_at, source_id, city_id et category_id sont hors du payload :
-  // PostgREST ne les met donc pas dans le SET du ON CONFLICT, et Postgres les laisse
-  // intacts. C'est ce qui rend le masquage d'un article persistant face au cron.
+  // `upsert` = `INSERT … ON CONFLICT (url) DO UPDATE SET …`, et Postgres valide les
+  // contraintes NOT NULL du tuple proposé **avant** de détecter le conflit. Omettre une
+  // colonne NOT NULL sans DEFAULT fait donc échouer le lot entier — « null value in
+  // column "source_id" violates not-null constraint » — même quand la ligne existe et que
+  // l'intention n'était qu'une mise à jour. D'où `IDENTITY` dans le payload.
+  //
+  // La protection ne vient donc plus de l'omission pour ces trois colonnes, mais de leur
+  // **valeur** : elles sont recopiées depuis la ligne stockée, si bien que
+  // `source_id = EXCLUDED.source_id` réécrit la valeur déjà en place. Ne jamais y mettre
+  // `source.id` : la propriété et la catégorie basculeraient à chaque cron dès que deux
+  // sources exposent la même URL.
+  //
+  // is_duplicate et fetched_at restent, eux, hors du payload : ils ont un DEFAULT, donc le
+  // tuple proposé est valide sans eux, et leur absence du SET les laisse intacts. C'est ce
+  // qui rend le masquage d'un article persistant face au cron.
   const { error } = await supabase.from('articles').upsert(patches, { onConflict: 'url' })
 
   if (error) result.errors.push(`Mise à jour du lot : ${error.message}`)
