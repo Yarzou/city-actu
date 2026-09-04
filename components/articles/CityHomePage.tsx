@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
+import { Newspaper, Wine, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
 import { GUINGUETTES_SLUG, isHomeTab, pushTab, type HomeTab } from '@/lib/feed/tabs'
@@ -63,11 +63,49 @@ export function CityHomePage({
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
 
+  // ─── Interruption d'un rafraîchissement en cours ─────────────────────────────
+  // La collecte dure 15 à 40 s (toutes les sources de la ville). Le geste de tirage
+  // partant au moindre appui-déplacé en haut de page, il faut pouvoir en sortir.
+  //
+  // Une ref et non du state : rien ne s'affiche à partir du contrôleur lui-même.
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Annulation en deux temps : le premier appui arme, le second confirme. Un seul
+  // appui suffirait, mais le pouce passe souvent près du haut de l'écran et une
+  // collecte annulée par mégarde est plus coûteuse qu'un appui de plus.
+  const [cancelArmed, setCancelArmed] = useState(false)
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const disarmCancel = useCallback(() => {
+    if (cancelTimerRef.current) {
+      clearTimeout(cancelTimerRef.current)
+      cancelTimerRef.current = null
+    }
+    setCancelArmed(false)
+  }, [])
+
+  // Le timer est piloté par un événement, pas par un rendu : il vit dans une ref et
+  // non dans un effet. Seul le nettoyage au démontage en est un.
+  useEffect(() => () => {
+    if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
+  }, [])
+
+  function armCancel() {
+    setCancelArmed(true)
+    if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
+    cancelTimerRef.current = setTimeout(() => {
+      cancelTimerRef.current = null
+      setCancelArmed(false)
+    }, 3000)
+  }
+
   async function handleRefresh() {
+    const controller = new AbortController()
+    abortRef.current = controller
     setRefreshing(true)
     setRefreshFeedback(null)
     try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      const res = await fetch('/api/admin/refresh', { method: 'POST', signal: controller.signal })
       const data = await res.json()
       if (res.status === 401) {
         setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
@@ -79,8 +117,18 @@ export function CityHomePage({
         setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
       }
     } catch {
-      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
+      // `abort()` ne coupe que l'attente côté client : la route continue sa collecte
+      // et insérera ses articles. Le dire, sinon on croit que rien n'a été fait et on
+      // relance pour rien.
+      setRefreshFeedback(
+        controller.signal.aborted
+          ? { ok: false, msg: 'Rafraîchissement interrompu — la collecte déjà lancée se termine côté serveur.' }
+          : { ok: false, msg: 'Erreur réseau' }
+      )
     }
+    abortRef.current = null
+    // Sans ça, le rafraîchissement suivant repartirait déjà armé sur la croix.
+    disarmCancel()
     setRefreshing(false)
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
@@ -105,18 +153,42 @@ export function CityHomePage({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
       {showIndicator && (
         <div
-          aria-hidden="true"
+          // Décoratif pendant le tirage, annonçable dès qu'il porte une action. Le
+          // conteneur reste `pointer-events-none` — il couvre toute la largeur et
+          // avalerait le geste de tirage ; seul le bouton reprend le pointeur.
+          aria-hidden={!refreshing}
           className="pointer-events-none fixed inset-x-0 z-40 flex justify-center transition-[top] duration-150"
           style={{ top: `calc(var(--header-h) + ${indicatorTravel}px - 2.75rem)` }}
         >
-          <span className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md">
-            <RefreshCw
-              className={cn('size-5 text-brand-600', refreshing && 'animate-spin')}
-              // Tant que le doigt tire, l'icône suit le geste plutôt que de tourner
-              // toute seule : c'est ce qui rend le franchissement du seuil lisible.
-              style={refreshing ? undefined : { transform: `rotate(${pull * 3}deg)`, opacity: armed ? 1 : 0.5 }}
-            />
-          </span>
+          {refreshing ? (
+            <button
+              type="button"
+              onClick={() => (cancelArmed ? abortRef.current?.abort() : armCancel())}
+              onBlur={disarmCancel}
+              aria-label={cancelArmed ? "Confirmer l'interruption" : 'Interrompre le rafraîchissement'}
+              className={cn(
+                'pointer-events-auto flex size-11 items-center justify-center rounded-full border bg-white shadow-md transition-colors focus-ring',
+                // La bordure double le changement d'icône : l'état armé doit se lire
+                // même à l'instant où le doigt masque le centre du bouton.
+                cancelArmed ? 'border-red-300' : 'border-gray-200'
+              )}
+            >
+              {cancelArmed ? (
+                <XCircle className="size-5 text-red-600" />
+              ) : (
+                <RefreshCw className="size-5 animate-spin text-brand-600" />
+              )}
+            </button>
+          ) : (
+            <span className="flex size-11 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md">
+              <RefreshCw
+                className="size-5 text-brand-600"
+                // Tant que le doigt tire, l'icône suit le geste plutôt que de tourner
+                // toute seule : c'est ce qui rend le franchissement du seuil lisible.
+                style={{ transform: `rotate(${pull * 3}deg)`, opacity: armed ? 1 : 0.5 }}
+              />
+            </span>
+          )}
         </div>
       )}
 
