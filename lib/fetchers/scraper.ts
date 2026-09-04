@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio'
 import type { Source, ScrapingConfig } from '@/lib/types'
 import type { FetchedItem } from './rss'
 import { chunk } from './batch'
-import { parisWallClockToISO, parseFrenchTimeRange, parisDateISO } from './dates'
+import { parisWallClockToISO, parseFrenchTimeRange, parisDateISO, parseFrenchRelativeDay } from './dates'
 
 const FETCH_HEADERS = {
   'User-Agent': 'VilleActu/1.0 (agregateur actualites locales)',
@@ -259,17 +259,57 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
   }
 }
 
-function parseFrenchDate(text: string): string | null {
-  try {
-    const d = new Date(text)
+/**
+ * Résout la date d'un élément de liste. **L'ordre des tentatives est la partie qui
+ * compte**, et il était faux :
+ *
+ * `new Date(text)` était essayé en premier. C'est le parseur permissif de V8, dont le
+ * comportement hors ISO 8601 n'est pas spécifié, et qui lit les dates à l'américaine :
+ * `new Date('05/09/2026')` rend le **9 mai**, pas le 5 septembre. La branche `DD/MM/YYYY`
+ * juste en dessous était donc du code mort pour ce format. Il avalait aussi les dates
+ * françaises en texte (« Samedi 5 septembre 2026 ») par une analyse au mot le plus
+ * proche, qui tombait juste par chance.
+ *
+ * Les formats explicites passent maintenant d'abord, du plus contraint au plus permissif,
+ * et le parseur de V8 ne sert plus que de dernier recours.
+ */
+export function parseFrenchDate(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  // 1. ISO 8601 — le cas des sources bien faites. fest.fr expose ainsi l'instant exact
+  //    dans l'attribut `content` de ses microdonnées schema.org
+  //    (`<div itemprop="startDate" content="2026-09-05T07:30Z">Demain à 9h30</div>`), et
+  //    l'appelant préfère déjà cet attribut au texte visible. Rien à deviner.
+  if (/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}|$)/.test(trimmed)) {
+    const d = new Date(trimmed)
     if (!isNaN(d.getTime())) return d.toISOString()
-    // Try DD/MM/YYYY or DD/MM/YYYY HH:MM
-    const match = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-    if (match) {
-      return new Date(`${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`).toISOString()
-    }
-    return null
-  } catch {
-    return null
   }
+
+  // Heure murale éventuelle, réutilisée par les branches suivantes. Absente ⇒ ancrage à
+  // midi par `parisWallClockToISO`, qui est le marqueur convenu d'« heure inconnue ».
+  const time = parseFrenchTimeRange(trimmed)?.start ?? null
+
+  // 2. JJ/MM/AAAA, dans l'ordre français, avant tout recours à `new Date`.
+  const slashes = trimmed.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/)
+  if (slashes) {
+    const [, day, month, year] = slashes
+    return toISO(parseInt(day), parseInt(month), parseInt(year), time)
+  }
+
+  // 3. Jour relatif : « Demain à 9h30 », « Aujourd'hui à 20h », « Ce soir ».
+  const relative = parseFrenchRelativeDay(trimmed)
+  if (relative) return parisWallClockToISO(relative, time)
+
+  // 4. Date française en texte : « Samedi 5 septembre 2026 », « Du 10 au 14 juin ».
+  const range = parseFrenchDateRange(trimmed)
+  if (range) {
+    // `parseFrenchDateRange` ancre à midi ; si le texte porte une heure, on la remet.
+    if (!time) return range.start
+    return parisWallClockToISO(parisDateISO(new Date(range.start)), time)
+  }
+
+  // 5. Dernier recours, pour les formats machine non ISO (RFC 1123 et compagnie).
+  const loose = new Date(trimmed)
+  return isNaN(loose.getTime()) ? null : loose.toISOString()
 }

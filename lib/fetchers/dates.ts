@@ -102,6 +102,36 @@ export function parseFrenchTimeRange(text: string): { start: string; end: string
   return null
 }
 
+/**
+ * Résout un libellé de jour **relatif** en date civile parisienne : « Demain à 9h30 »,
+ * « Aujourd'hui à 20h », « Ce soir », « Après-demain ».
+ *
+ * fest.fr affiche ses agendas sous cette forme. Contrairement à la recherche de dates
+ * dans la prose — écartée, elle se trompait de 402 jours sur un article — il n'y a ici
+ * aucune inférence : le libellé est un décalage exact par rapport au jour de la
+ * récupération. Le seul risque est un passage du cron à cheval sur minuit, qui décalerait
+ * d'un jour ; c'est pourquoi une date lisible par machine reste toujours préférée quand
+ * la page en expose une (attribut `content` des microdonnées schema.org, `datetime`).
+ *
+ * `now` est un paramètre et non `new Date()` en dur pour rester testable sans horloge
+ * simulée. La date civile est celle de **Paris**, pas celle du serveur : Vercel tourne en
+ * UTC, et entre minuit et 2 h du matin les deux ne sont pas le même jour.
+ */
+export function parseFrenchRelativeDay(text: string, now: Date = new Date()): string | null {
+  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim()
+
+  // Ordre important : « après-demain » contient « demain ».
+  const offset =
+    /\baprès[-\s]demain\b|\bapres[-\s]demain\b/.test(normalized) ? 2 :
+    /\bdemain\b/.test(normalized)                                ? 1 :
+    /\baujourd/.test(normalized) || /\bce soir\b/.test(normalized) || /\bce midi\b/.test(normalized) ? 0 :
+    null
+
+  if (offset === null) return null
+
+  return parisDateISO(new Date(now.getTime() + offset * 24 * 3600 * 1000))
+}
+
 function toHHMM(hour: string, minute: string | undefined): string | null {
   const h = parseInt(hour)
   const m = minute ? parseInt(minute) : 0
