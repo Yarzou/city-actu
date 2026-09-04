@@ -8,6 +8,7 @@ import { fr } from 'date-fns/locale'
 import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { AdminCitiesSection } from './AdminCitiesSection'
 const SOURCE_TYPE_BADGE: Record<SourceType, string> = {
   rss:      'bg-blue-100 text-blue-700',
   scraping: 'bg-orange-100 text-orange-700',
@@ -87,6 +88,14 @@ export function AdminSourcesPanel() {
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [cities, setCities]         = useState<City[]>([])
+  /**
+   * Ville sur laquelle portent les sections Sources et Catégories.
+   *
+   * Indispensable depuis que les catégories sont propres à une ville : sans ce filtre,
+   * « Gestion des catégories » listerait les catégories de toutes les villes mélangées,
+   * sans moyen de savoir à laquelle chacune appartient.
+   */
+  const [selectedCityId, setSelectedCityId] = useState<number | null>(null)
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
   const [fetching, setFetching]     = useState<number | null>(null)
@@ -139,7 +148,7 @@ export function AdminSourcesPanel() {
     setConfirm(c => ({ ...c, open: false }))
   }
   const [form, setForm] = useState({
-    city_id: '',
+    // Plus de `city_id` : la ville vient du sélecteur de portée du panneau.
     category_id: '',
     name: '',
     url: '',
@@ -154,12 +163,15 @@ export function AdminSourcesPanel() {
       const [{ data: src }, { data: cats }, { data: cts }, { data: summaries }] = await Promise.all([
         supabase.from('sources').select('*, city:cities(id,name), category:categories(id,name,slug)').order('name'),
         supabase.from('categories').select('*').order('display_order').order('name'),
-        supabase.from('cities').select('*').order('name'),
+        supabase.from('cities').select('*').order('display_order').order('name'),
         supabase.from('import_summaries').select('*').order('created_at', { ascending: false }).limit(20),
       ])
       setSources(src ?? [])
       setCategories(cats ?? [])
-      setCities(cts ?? [])
+      const cityList = (cts ?? []) as City[]
+      setCities(cityList)
+      // La première ville de l'ordre du menu sert de sélection par défaut.
+      setSelectedCityId((current) => current ?? cityList[0]?.id ?? null)
       setImportSummaries((summaries as ImportSummary[]) ?? [])
       setLoading(false)
     }
@@ -187,12 +199,18 @@ export function AdminSourcesPanel() {
 
   async function addSource(e: React.FormEvent) {
     e.preventDefault()
+    // La ville vient du sélecteur de portée du panneau : son champ a disparu du
+    // formulaire, deux choix au même endroit pouvant se contredire.
+    if (selectedCityId === null) {
+      setAdminFeedback({ ok: false, msg: 'Sélectionnez une ville avant de créer une source.' })
+      return
+    }
     const supabase = createClient()
     const config = form.type === 'scraping' ? buildScrapingConfig(scrapingConfig) : null
     const { data, error } = await supabase
       .from('sources')
       .insert({
-        city_id: parseInt(form.city_id),
+        city_id: selectedCityId,
         category_id: parseInt(form.category_id),
         name: form.name,
         url: form.url,
@@ -205,7 +223,7 @@ export function AdminSourcesPanel() {
     if (!error && data) {
       setSources(prev => [...prev, data])
       setShowForm(false)
-      setForm({ city_id: '', category_id: '', name: '', url: '', type: 'rss', active: true })
+      setForm({ category_id: '', name: '', url: '', type: 'rss', active: true })
       setScrapingConfig(EMPTY_SCRAPING_CONFIG)
     }
   }
@@ -272,18 +290,25 @@ export function AdminSourcesPanel() {
 
   async function addCategory(e: React.FormEvent) {
     e.preventDefault()
+    // Les catégories appartiennent à une ville : sans rattachement, l'insertion échoue
+    // sur la contrainte NOT NULL de la migration 016.
+    if (selectedCityId === null) {
+      setAdminFeedback({ ok: false, msg: 'Sélectionnez une ville avant de créer une catégorie.' })
+      return
+    }
     const supabase = createClient()
     // Une nouvelle catégorie se pose en fin de liste : l'ordre est éditorial depuis
     // qu'il est réglable à la main, l'insérer alphabétiquement au milieu déplacerait
-    // silencieusement ce que l'admin a choisi.
-    const nextOrder = categories.length
-      ? Math.max(...categories.map(c => c.display_order)) + 10
+    // silencieusement ce que l'admin a choisi. Calculé sur les catégories **de cette
+    // ville** : le maximum toutes villes confondues laisserait des trous croissants.
+    const nextOrder = cityCategories.length
+      ? Math.max(...cityCategories.map(c => c.display_order)) + 10
       : 10
     const { data, error } = await supabase.from('categories')
       // icon vide → l'emoji par défaut plutôt qu'une chaîne vide : l'icône est
       // maintenant lue depuis la base pour l'affichage public, une catégorie sans
       // icône laisserait un trou dans la barre de filtres.
-      .insert({ name: newCategory.name, slug: newCategory.slug || toSlug(newCategory.name), icon: newCategory.icon || '📰', color: newCategory.color, display_order: nextOrder })
+      .insert({ city_id: selectedCityId, name: newCategory.name, slug: newCategory.slug || toSlug(newCategory.name), icon: newCategory.icon || '📰', color: newCategory.color, display_order: nextOrder })
       .select('*').single()
     if (!error && data) {
       setCategories(prev => [...prev, data])
@@ -330,17 +355,24 @@ export function AdminSourcesPanel() {
    * d'un chargement à l'autre, et un nouveau clic répare.
    */
   async function moveCategory(id: number, direction: 'up' | 'down') {
-    const index = categories.findIndex(c => c.id === id)
+    // Sur la liste scopée à la ville, pas sur toutes les catégories : les indices
+    // doivent correspondre à ce qui est affiché, sinon les flèches permutent avec la
+    // voisine d'une autre ville.
+    const scoped = selectedCityId === null ? categories : categories.filter(c => c.city_id === selectedCityId)
+    const index = scoped.findIndex(c => c.id === id)
     const swapIndex = direction === 'up' ? index - 1 : index + 1
-    if (index === -1 || swapIndex < 0 || swapIndex >= categories.length) return
+    if (index === -1 || swapIndex < 0 || swapIndex >= scoped.length) return
 
-    const current = categories[index]
-    const neighbour = categories[swapIndex]
+    const current = scoped[index]
+    const neighbour = scoped[swapIndex]
     const previous = categories
 
-    const next = [...categories]
-    next[index]     = { ...neighbour, display_order: current.display_order }
-    next[swapIndex] = { ...current,   display_order: neighbour.display_order }
+    // Réécriture par identifiant, le tableau d'état contenant toutes les villes.
+    const next = categories.map(c => {
+      if (c.id === current.id) return { ...c, display_order: neighbour.display_order }
+      if (c.id === neighbour.id) return { ...c, display_order: current.display_order }
+      return c
+    }).sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name, 'fr'))
 
     setCategories(next)
     setReorderingCategory(true)
@@ -473,7 +505,13 @@ export function AdminSourcesPanel() {
     setAiSummary(null)
     setFetchResult({})
     try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      // Scopé à la ville configurée : le bouton recollectait toutes les villes, ce qui
+      // dépasse le budget de temps de la fonction dès qu'il y en a plusieurs.
+      const res = await fetch('/api/admin/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedCity ? { citySlug: selectedCity.slug, cityId: selectedCity.id } : {}),
+      })
       const data = await res.json()
       if (res.status === 401) {
         setRefreshError('Vous devez être connecté pour rafraîchir les sources.')
@@ -577,10 +615,79 @@ export function AdminSourcesPanel() {
     summarySourceFilter === 'all' ? true : summary.source === summarySourceFilter
   ))
 
+  // Sections Sources et Catégories scopées à la ville sélectionnée. Le filtrage est en
+  // mémoire : les trois listes sont courtes et déjà chargées.
+  const citySources = selectedCityId === null ? sources : sources.filter(s => s.city_id === selectedCityId)
+  const cityCategories = selectedCityId === null ? categories : categories.filter(c => c.city_id === selectedCityId)
+  const selectedCity = cities.find(c => c.id === selectedCityId) ?? null
+  const sourceCountByCity = sources.reduce<Record<number, number>>((acc, s) => {
+    acc[s.city_id] = (acc[s.city_id] ?? 0) + 1
+    return acc
+  }, {})
+
   if (loading) return <div className="py-8 text-gray-400 text-sm">Chargement…</div>
 
   return (
     <div>
+      {/*
+        Bandeau de retour remonté au-dessus des accordéons : il n'était rendu qu'à
+        l'intérieur de « Gestion des sources », donc un message venant du
+        réordonnancement des catégories ou de la gestion des villes était invisible.
+      */}
+      {adminFeedback && (
+        <div className={cn(
+          'flex items-center justify-between rounded-xl px-4 py-3 mb-4 text-sm border',
+          adminFeedback.ok
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+        )}>
+          <span>{adminFeedback.ok ? '✅' : '❌'} {adminFeedback.msg}</span>
+          <button onClick={() => setAdminFeedback(null)} className={cn(
+            'ml-4',
+            adminFeedback.ok ? 'text-green-600 hover:text-green-800' : 'text-red-600 hover:text-red-800'
+          )}>✕</button>
+        </div>
+      )}
+
+      <AdminCitiesSection
+        cities={cities}
+        categories={categories}
+        sourceCountByCity={sourceCountByCity}
+        onCitiesChange={setCities}
+        onCategoriesAdded={(added) => setCategories(prev => [...prev, ...added])}
+        askConfirm={askConfirm}
+        closeConfirm={closeConfirm}
+        setFeedback={setAdminFeedback}
+      />
+
+      {/*
+        Sélecteur de portée. Les sources l'étaient déjà par leur city_id, mais le panneau
+        les listait toutes sans jamais afficher la colonne ville ; les catégories, elles,
+        sont devenues propres à une ville.
+      */}
+      {cities.length > 1 && (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3">
+          <label className="text-xs font-medium text-gray-600" htmlFor="admin-city-scope">
+            Ville configurée
+          </label>
+          <select
+            id="admin-city-scope"
+            value={selectedCityId ?? ''}
+            onChange={e => setSelectedCityId(e.target.value ? Number(e.target.value) : null)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            {cities.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.published ? '' : ' — brouillon'}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500">
+            Les sources et les catégories ci-dessous ne concernent que cette ville.
+          </p>
+        </div>
+      )}
+
       {/* ── Gestion des sources ── */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
         <div className="flex items-center border-b border-gray-100">
@@ -592,9 +699,10 @@ export function AdminSourcesPanel() {
               <Rss size={17} className="text-brand-600 flex-shrink-0" />
               <span className="text-sm font-medium text-gray-800">
                 Gestion des sources
-                {sources.length > 0 && (
+                {selectedCity && <span className="ml-1 font-normal text-gray-500">— {selectedCity.name}</span>}
+                {citySources.length > 0 && (
                   <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-                    {sources.length}
+                    {citySources.length}
                   </span>
                 )}
               </span>
@@ -658,21 +766,6 @@ export function AdminSourcesPanel() {
         <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6 text-sm text-red-800">
           <span>❌ {refreshError}</span>
           <button onClick={() => setRefreshError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
-        </div>
-      )}
-
-      {adminFeedback && (
-        <div className={cn(
-          'flex items-center justify-between rounded-xl px-4 py-3 mb-4 text-sm border',
-          adminFeedback.ok
-            ? 'bg-green-50 border-green-200 text-green-800'
-            : 'bg-red-50 border-red-200 text-red-800'
-        )}>
-          <span>{adminFeedback.ok ? '✅' : '❌'} {adminFeedback.msg}</span>
-          <button onClick={() => setAdminFeedback(null)} className={cn(
-            'ml-4',
-            adminFeedback.ok ? 'text-green-600 hover:text-green-800' : 'text-red-600 hover:text-red-800'
-          )}>✕</button>
         </div>
       )}
 
@@ -804,20 +897,14 @@ export function AdminSourcesPanel() {
         <form onSubmit={addSource} className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-gray-900">Nouvelle source</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ville</label>
-              <select required value={form.city_id} onChange={e => setForm(f => ({ ...f, city_id: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">Choisir…</option>
-                {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
+            {/* Plus de sélecteur de ville : le sélecteur de portée en tête de panneau
+                fait foi, et un second choix au même endroit pouvait le contredire. */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
               <select required value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">Choisir…</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {cityCategories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
               </select>
             </div>
             <div>
@@ -897,7 +984,7 @@ export function AdminSourcesPanel() {
 
       {/* Sources — mobile cards */}
       <div className="sm:hidden space-y-3 mb-4">
-        {sources.map((source) => {
+        {citySources.map((source) => {
           const result = fetchResult[source.id]
           const hasErrors = result && result.errors.length > 0
           return (
@@ -1036,7 +1123,7 @@ export function AdminSourcesPanel() {
             </div>
           )
         })}
-        {sources.length === 0 && (
+        {citySources.length === 0 && (
           <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
         )}
       </div>
@@ -1054,7 +1141,7 @@ export function AdminSourcesPanel() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sources.map((source) => {
+            {citySources.map((source) => {
               const result = fetchResult[source.id]
               const hasErrors = result && result.errors.length > 0
               return (
@@ -1206,7 +1293,7 @@ export function AdminSourcesPanel() {
             })}
           </tbody>
         </table>
-        {sources.length === 0 && (
+        {citySources.length === 0 && (
           <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
         )}
       </div>
@@ -1225,9 +1312,10 @@ export function AdminSourcesPanel() {
               <Tags size={17} className="text-brand-600 flex-shrink-0" />
               <span className="text-sm font-medium text-gray-800">
                 Gestion des catégories
-                {categories.length > 0 && (
+                {selectedCity && <span className="ml-1 font-normal text-gray-500">— {selectedCity.name}</span>}
+                {cityCategories.length > 0 && (
                   <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-                    {categories.length}
+                    {cityCategories.length}
                   </span>
                 )}
               </span>
@@ -1239,7 +1327,7 @@ export function AdminSourcesPanel() {
         {categoriesOpen && (
           <div className="p-4 space-y-3">
             {/* Existing categories */}
-            {categories.map((cat, index) => (
+            {cityCategories.map((cat, index) => (
               <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-3">
                 {editingCategory === cat.id ? (
                   <div className="space-y-3">
@@ -1296,7 +1384,7 @@ export function AdminSourcesPanel() {
                         <ArrowUp className="size-4" />
                       </button>
                       <button onClick={() => moveCategory(cat.id, 'down')}
-                        disabled={index === categories.length - 1 || reorderingCategory}
+                        disabled={index === cityCategories.length - 1 || reorderingCategory}
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors" title="Descendre">
                         <ArrowDown className="size-4" />
                       </button>

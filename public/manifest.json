@@ -1,9 +1,9 @@
 {
   "id": "/la-chapelle-sur-erdre",
-  "name": "Ville Actu — La Chapelle-sur-Erdre",
+  "name": "Ville Actu — actualités locales",
   "short_name": "Ville Actu",
-  "description": "Actualités locales agrégées pour La Chapelle-sur-Erdre",
-  "start_url": "/la-chapelle-sur-erdre",
+  "description": "Actualités locales agrégées, commune par commune : infos pratiques, agenda, sorties, travaux et emploi.",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -16,17 +16,17 @@
     {
       "name": "Actus",
       "short_name": "Actus",
-      "url": "/la-chapelle-sur-erdre"
-    },
-    {
-      "name": "Guinguettes",
-      "short_name": "Guinguettes",
-      "url": "/la-chapelle-sur-erdre?tab=guinguettes"
+      "url": "/"
     },
     {
       "name": "Mes favoris",
       "short_name": "Favoris",
-      "url": "/la-chapelle-sur-erdre?tab=favoris"
+      "url": "/?tab=favoris"
+    },
+    {
+      "name": "Résumés IA",
+      "short_name": "Résumés",
+      "url": "/?tab=ia"
     }
   ],
   "icons": [

@@ -3,15 +3,12 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { Menu, X, Newspaper, Monitor, Moon, Sun, LogOut, Settings } from 'lucide-react'
+import { Menu, X, Newspaper, Monitor, Moon, Sun, LogOut, Settings, EyeOff } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
 import { cn } from '@/lib/utils'
+import type { CityListItem } from '@/lib/feed/cities'
 import type { User } from '@supabase/supabase-js'
-
-const NAV_LINKS = [
-  { href: '/la-chapelle-sur-erdre', label: 'La Chapelle-sur-Erdre' },
-]
 
 const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [
   { value: 'light',  label: 'Clair',  icon: <Sun className="size-4" /> },
@@ -28,9 +25,24 @@ interface NavbarProps {
    * impasse — et l'entrée Profil de la barre basse a été retirée pour la même raison.
    */
   isAdmin?: boolean
+  /**
+   * Villes joignables, résolues côté serveur dans le layout racine. Remplace le
+   * littéral `NAV_LINKS` : une ville créée en base mais absente du tableau n'était pas
+   * seulement injoignable depuis le menu, elle n'affichait même pas son nom dans la
+   * barre haute. Pour un administrateur, la liste contient aussi les brouillons —
+   * la RLS les lui rend, et `published` permet de les marquer.
+   */
+  cities?: CityListItem[]
+  /** Ville de repli pour les routes sans slug (`/profil`, `/a-propos`). */
+  currentCitySlug?: string | null
 }
 
-export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
+export function Navbar({
+  initialUser = null,
+  isAdmin = false,
+  cities = [],
+  currentCitySlug = null,
+}: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -52,12 +64,15 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
   // Close menu on route change
   useEffect(() => { setOpen(false) }, [pathname])
 
-  // Le nom de la ville se lit dans l'URL : la Navbar vit dans le layout racine et n'a
-  // pas accès aux props de la page — même mécanique que BottomNav. Il n'est affiché
-  // qu'en mobile, où le titre de la page a été retiré pour rendre la hauteur d'écran
-  // au feed ; au-delà de 640px le <h1> de la page reprend ce rôle.
+  // Le nom de la ville se lit dans l'URL, puis dans la liste reçue du serveur. Il n'est
+  // affiché qu'en mobile, où le titre de la page a été retiré pour rendre la hauteur
+  // d'écran au feed ; au-delà de 640px le <h1> de la page reprend ce rôle.
   const firstSegment = pathname.split('/').filter(Boolean)[0]
-  const cityLabel = NAV_LINKS.find(({ href }) => href === `/${firstSegment}`)?.label ?? null
+  const activeCity = cities.find((c) => c.slug === firstSegment) ?? null
+  const cityLabel = activeCity?.name ?? null
+  // Ville servant de cible aux liens hors page ville : celle de l'URL si on y est,
+  // sinon celle mémorisée par le cookie.
+  const homeSlug = activeCity?.slug ?? currentCitySlug
 
   // Prevent body scroll when menu is open
   useEffect(() => {
@@ -94,7 +109,7 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           {/* Logo, suivi du nom de la ville en mobile */}
           <div className="flex min-w-0 items-baseline gap-2">
-            <Link href="/la-chapelle-sur-erdre" className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors focus-ring">
+            <Link href={homeSlug ? `/${homeSlug}` : '/'} className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors focus-ring">
               <Newspaper className="size-5 self-center" />
               <span>Ville Actu</span>
             </Link>
@@ -109,20 +124,21 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
           </div>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-1 text-sm">
-            {NAV_LINKS.map(({ href, label }) => (
+          <nav className="hidden md:flex items-center gap-1 text-sm" aria-label="Villes">
+            {cities.map((city) => (
               <Link
-                key={href}
-                href={href}
-                aria-current={pathname === href ? 'page' : undefined}
+                key={city.slug}
+                href={`/${city.slug}`}
+                aria-current={city.slug === firstSegment ? 'page' : undefined}
                 className={cn(
-                  'px-3 py-2 rounded-lg transition-colors focus-ring',
-                  pathname === href
+                  'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors focus-ring',
+                  city.slug === firstSegment
                     ? 'bg-brand-50 text-brand-700 font-medium'
                     : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
-                {label}
+                {city.name}
+                {!city.published && <DraftBadge />}
               </Link>
             ))}
           </nav>
@@ -191,21 +207,28 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
         )}
       >
         <nav className="px-4 py-3 flex flex-col gap-1 text-sm pb-safe">
-          {NAV_LINKS.map(({ href, label }) => (
+          <p className="px-3 pb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+            {cities.length > 1 ? 'Villes' : 'Ville'}
+          </p>
+          {cities.map((city) => (
             <Link
-              key={href}
-              href={href}
-              aria-current={pathname === href ? 'page' : undefined}
+              key={city.slug}
+              href={`/${city.slug}`}
+              aria-current={city.slug === firstSegment ? 'page' : undefined}
               className={cn(
-                'px-3 py-3 rounded-lg font-medium focus-ring',
-                pathname === href
+                'inline-flex items-center gap-2 px-3 py-3 rounded-lg font-medium focus-ring',
+                city.slug === firstSegment
                   ? 'bg-brand-50 text-brand-700'
                   : 'text-gray-700 hover:bg-gray-100'
               )}
             >
-              {label}
+              {city.name}
+              {!city.published && <DraftBadge />}
             </Link>
           ))}
+          {cities.length === 0 && (
+            <p className="px-3 py-3 text-gray-500">Aucune ville disponible pour le moment.</p>
+          )}
           <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
             {/*
               Pas de lien « Administration » ici : sur mobile, l'accès passe par
@@ -247,6 +270,22 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
         </nav>
       </div>
     </>
+  )
+}
+
+/**
+ * Marque une ville non publiée. Visible seulement pour un administrateur : la RLS ne
+ * rend pas les brouillons aux autres, ils n'ont donc jamais de ligne à marquer.
+ */
+function DraftBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+      title="Ville non publiée : visible des seuls administrateurs"
+    >
+      <EyeOff className="size-3" />
+      Brouillon
+    </span>
   )
 }
 

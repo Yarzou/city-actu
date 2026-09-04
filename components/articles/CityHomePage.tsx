@@ -1,14 +1,15 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
+import { Newspaper, Heart, Sparkles, RefreshCw, Tag } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
+import { CITY_COOKIE, CITY_COOKIE_MAX_AGE } from '@/lib/feed/cities'
 import type { Category } from '@/lib/types'
 
 // Chargés à la demande : un seul onglet est rendu à la fois, et « Actus » est celui
@@ -16,12 +17,29 @@ import type { Category } from '@/lib/types'
 const FavoritesTab = dynamic(() => import('./FavoritesTab').then((m) => m.FavoritesTab))
 const AIDigestTab = dynamic(() => import('./AIDigestTab').then((m) => m.AIDigestTab))
 
-const TABS: { id: HomeTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'actus',       label: 'Actus',       icon: <Newspaper className="size-4" /> },
-  { id: 'guinguettes', label: 'Guinguettes', icon: <Wine className="size-4" /> },
-  { id: 'favoris',     label: 'Favoris',     icon: <Heart className="size-4" /> },
-  { id: 'ia',          label: 'Résumés IA',  icon: <Sparkles className="size-4" /> },
-]
+/**
+ * L'onglet thématique n'est plus « Guinguettes » codé en dur : son libellé et son icône
+ * viennent de la catégorie que la ville désigne dans `spotlight_category_id`. Une ville
+ * qui n'en désigne aucune n'affiche que Actus / Favoris / Résumés IA.
+ */
+function buildTabs(spotlight: Category | null): { id: HomeTab; label: string; icon: React.ReactNode }[] {
+  return [
+    { id: 'actus', label: 'Actus', icon: <Newspaper className="size-4" /> },
+    ...(spotlight
+      ? [{
+          id: 'spotlight' as HomeTab,
+          label: spotlight.name,
+          // L'icône de la catégorie est un emoji stocké en base ; `Tag` sert de repli
+          // quand la catégorie n'en porte pas.
+          icon: spotlight.icon
+            ? <span className="text-base leading-none">{spotlight.icon}</span>
+            : <Tag className="size-4" />,
+        }]
+      : []),
+    { id: 'favoris', label: 'Favoris', icon: <Heart className="size-4" /> },
+    { id: 'ia', label: 'Résumés IA', icon: <Sparkles className="size-4" /> },
+  ]
+}
 
 interface CityHomePageProps {
   citySlug: string
@@ -29,6 +47,8 @@ interface CityHomePageProps {
   /** L'onglet que le serveur a effectivement rendu — celui dont `children` porte le feed. */
   tab: HomeTab
   categories: Category[]
+  /** Catégorie mise en avant par la ville, ou null. Porte l'onglet thématique. */
+  spotlight: Category | null
   userId: string | null
   isAdmin: boolean
   horizon: string
@@ -45,6 +65,7 @@ export function CityHomePage({
   cityName,
   tab: serverTab,
   categories,
+  spotlight,
   userId,
   isAdmin,
   horizon,
@@ -57,8 +78,22 @@ export function CityHomePage({
   // partageable, survit au rafraîchissement, se défait au bouton retour, et peut
   // servir de cible aux raccourcis du manifeste PWA.
   const searchParams = useSearchParams()
-  const urlTab = searchParams.get('tab')
-  const tab: HomeTab = isHomeTab(urlTab) ? urlTab : 'actus'
+  const requestedTab = toHomeTab(searchParams.get('tab'))
+  // Sans catégorie mise en avant, l'onglet thématique n'existe pas : une URL qui le
+  // demande retombe sur Actus plutôt que d'afficher un onglet vide.
+  const tab: HomeTab = requestedTab === 'spotlight' && !spotlight ? 'actus' : requestedTab
+
+  /*
+   * Mémorise la ville visitée pour que la racine `/` y revienne.
+   *
+   * Un cookie et non `localStorage` : `app/page.tsx` est un composant serveur, il peut
+   * lire un cookie mais pas le stockage du navigateur — il faudrait sinon rendre du HTML
+   * puis rediriger côté client, avec un écran intermédiaire visible. Écrit ici plutôt
+   * que par une Server Action : une ligne suffit et rien ne dépend du résultat.
+   */
+  useEffect(() => {
+    document.cookie = `${CITY_COOKIE}=${encodeURIComponent(citySlug)}; path=/; max-age=${CITY_COOKIE_MAX_AGE}; SameSite=Lax`
+  }, [citySlug])
 
   const selectTab = useCallback((next: HomeTab) => {
     if (typeof window === 'undefined') return
@@ -78,7 +113,13 @@ export function CityHomePage({
     setRefreshing(true)
     setRefreshFeedback(null)
     try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      // Scopé à la ville affichée : sans ça le bouton d'une ville recollectait toutes
+      // les autres, et étiquetait pourtant le résumé de celle-ci seule.
+      const res = await fetch('/api/admin/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ citySlug }),
+      })
       const data = await res.json()
       if (res.status === 401) {
         setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
@@ -110,7 +151,8 @@ export function CityHomePage({
   const showIndicator = pullEnabled && (pull > 0 || refreshing)
 
   const isServerRenderedTab = tab === serverTab
-  const isFeedTab = tab === 'actus' || tab === 'guinguettes'
+  const isFeedTab = tab === 'actus' || tab === 'spotlight'
+  const tabs = buildTabs(spotlight)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
@@ -168,7 +210,7 @@ export function CityHomePage({
         aria-label="Sections"
         className="hidden sm:flex border-b border-gray-200 mb-6"
       >
-        {TABS.map(({ id, label, icon }) => (
+        {tabs.map(({ id, label, icon }) => (
           <button
             key={id}
             role="tab"
@@ -196,12 +238,12 @@ export function CityHomePage({
         <ArticleFeed
           key={tab}
           citySlug={citySlug}
-          categorySlug={tab === 'guinguettes' ? GUINGUETTES_SLUG : undefined}
-          excludeCategorySlug={tab === 'guinguettes' ? undefined : GUINGUETTES_SLUG}
+          categorySlug={tab === 'spotlight' ? spotlight?.slug : undefined}
+          excludeCategorySlug={tab === 'spotlight' ? undefined : spotlight?.slug}
           canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar
-          hideCategoryTabs={tab === 'guinguettes'}
+          hideCategoryTabs={tab === 'spotlight'}
           categories={categories}
           userId={userId}
           horizon={horizon}

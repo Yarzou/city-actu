@@ -5,7 +5,11 @@ import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_TABLES = ['categories', 'sources', 'articles', 'import_summaries'] as const
+// `cities` y figure depuis la gestion multi-villes. Attention : `sources.city_id` et
+// `articles.city_id` sont en ON DELETE CASCADE, donc supprimer une ville efface ses
+// sources et ses articles. L'interface ne propose le bouton que sur une ville dépubliée
+// et énonce le décompte avant confirmation.
+const ALLOWED_TABLES = ['categories', 'sources', 'articles', 'import_summaries', 'cities'] as const
 type AllowedTable = typeof ALLOWED_TABLES[number]
 
 export async function POST(request: Request) {

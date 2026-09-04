@@ -35,24 +35,11 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return Response.json({ error: citySummaryError.message }, { status: 500 })
   }
 
-  let latest = citySummaries?.[0] ?? null
-
-  // Backward compatibility: older on-demand summaries could have city_id = null.
-  if (!latest) {
-    const { data: globalSummaries, error: globalSummaryError } = await supabase
-      .from('import_summaries')
-      .select('summary_text, articles_count, created_at, source')
-      .is('city_id', null)
-      .eq('source', 'on_demand')
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (globalSummaryError) {
-      return Response.json({ error: globalSummaryError.message }, { status: 500 })
-    }
-
-    latest = globalSummaries?.[0] ?? null
-  }
+  // La reprise sur les résumés à city_id = NULL a été retirée : ces lignes héritées
+  // avaient été générées pour la ville seedée, donc dès la deuxième ville elles
+  // faisaient passer le résumé de l'une pour celui de l'autre. La migration 016 les
+  // rattache à leur ville, il n'y a plus d'orphelin à rattraper.
+  const latest = citySummaries?.[0] ?? null
 
   if (!latest) {
     return Response.json({ digest: null, message: 'Aucun résumé à la demande disponible.' })

@@ -6,8 +6,10 @@ import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import Script from 'next/script'
 import './globals.css'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminUser } from '@/lib/authz'
+import { CITY_COOKIE, listVisibleCities, pickCitySlug } from '@/lib/feed/cities'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { BottomNav } from '@/components/layout/BottomNav'
@@ -22,11 +24,13 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
+  // Génériques : l'application couvre plusieurs villes. Le nom de la ville revient par
+  // le `generateMetadata` de chaque page, qui le lit en base.
   title: {
-    default: 'Ville Actu — La Chapelle-sur-Erdre',
+    default: 'Ville Actu — actualités locales',
     template: '%s | Ville Actu',
   },
-  description: "Actualités locales agrégées : infos pratiques, sorties enfants, agenda et plus encore pour La Chapelle-sur-Erdre.",
+  description: "Actualités locales agrégées : infos pratiques, sorties, agenda, travaux et emploi, commune par commune.",
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -48,6 +52,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // non-administrateurs, le proposer à tous mènerait à une impasse.
   const isAdmin = user ? await isAdminUser(supabase, user.id) : false
 
+  /*
+   * Point unique de résolution des villes. La liste ne filtre pas sur `published` :
+   * c'est la RLS (migration 016) qui ne rend une ville dépubliée qu'à un
+   * administrateur. Le menu la marque alors comme brouillon.
+   *
+   * Le cookie porte la dernière ville visitée, et sert de repli aux routes qui n'ont pas
+   * de slug (`/profil`, `/a-propos`) — là où la barre basse pointait auparavant vers
+   * une ville codée en dur.
+   */
+  const cities = await listVisibleCities(supabase)
+  const cookieStore = await cookies()
+  const fallbackCitySlug = pickCitySlug(cities, cookieStore.get(CITY_COOKIE)?.value)
+
   return (
     <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
       <head>
@@ -59,7 +76,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="font-sans bg-gray-50 text-gray-900 antialiased min-h-full flex flex-col">
         <ThemeProvider>
-          <Navbar initialUser={user ? { id: user.id } : null} isAdmin={isAdmin} />
+          <Navbar
+            initialUser={user ? { id: user.id } : null}
+            isAdmin={isAdmin}
+            cities={cities}
+            currentCitySlug={fallbackCitySlug}
+          />
           {/*
             `pt-[var(--header-h)]` : le décalage suivait l'en-tête à `pt-16` en dur,
             faux de la hauteur de l'encoche en PWA standalone.
@@ -70,7 +92,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {children}
           </main>
           <Footer />
-          <BottomNav isAdmin={isAdmin} />
+          <BottomNav isAdmin={isAdmin} fallbackCitySlug={fallbackCitySlug} cities={cities} />
           <PWAInstallBanner />
         </ThemeProvider>
         <Script id="sw-register" strategy="afterInteractive">{`

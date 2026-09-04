@@ -9,11 +9,26 @@ export interface City {
   lat: number
   lng: number
   description: string | null
+  /**
+   * Visible des utilisateurs ordinaires. Appliqué par la RLS (migration 016), pas par
+   * l'application : une ville non publiée n'est pas seulement absente du menu, sa page
+   * renvoie 404 pour qui n'est pas administrateur.
+   */
+  published: boolean
+  /** Ordre dans le menu. Trié par display_order puis name, comme les catégories. */
+  display_order: number
+  /**
+   * Catégorie sortie du feed « Actus » pour recevoir son propre onglet. NULL = la ville
+   * n'a pas d'onglet thématique. Remplace le `GUINGUETTES_SLUG` codé en dur.
+   */
+  spotlight_category_id: number | null
   created_at: string
 }
 
 export interface Category {
   id: number
+  /** Les catégories sont propres à une ville depuis la migration 016. */
+  city_id: number
   name: string
   slug: string
   icon: string

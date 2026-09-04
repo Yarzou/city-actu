@@ -9,7 +9,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { FeedArticle } from '@/lib/types'
+import type { Category, FeedArticle } from '@/lib/types'
 
 /**
  * Colonnes explicites plutôt que `*` : `title_search` et `content_preview_search`
@@ -30,8 +30,27 @@ export interface FeedContext {
    * depuis que les catégories ont quitté le segment de route pour `?cat=`.
    */
   categoryIds: number[]
-  /** Une seule exclusion : les guinguettes, sorties du feed « Actus ». */
+  /**
+   * La catégorie mise en avant, sortie du feed « Actus » pour recevoir son propre
+   * onglet. Null quand la ville n'en désigne aucune.
+   */
   excludeCategoryId: number | null
+}
+
+/**
+ * Tout ce qu'une page ville a besoin de savoir, en une seule requête.
+ *
+ * Les catégories accompagnent le contexte parce qu'elles sont désormais propres à la
+ * ville : les résoudre séparément demanderait de connaître d'abord l'identifiant de la
+ * ville, donc deux allers-retours en série sur le chemin critique du premier rendu.
+ * L'imbrication PostgREST les ramène avec la ville.
+ */
+export interface CityFeedResolution {
+  context: FeedContext
+  /** Catégories de la ville, triées comme dans l'administration. */
+  categories: Category[]
+  /** Catégorie mise en avant, ou null — source du libellé et de l'icône de l'onglet. */
+  spotlight: Category | null
 }
 
 export interface FeedQueryParams {
@@ -53,49 +72,80 @@ export interface FeedQueryResult {
 }
 
 /**
- * Résout ville et catégories en une seule vague. Retourne null si la ville n'existe
- * pas — l'appelant en fait un `notFound()` côté serveur.
+ * Résout la ville, ses catégories et sa catégorie mise en avant en **une** requête.
+ * Retourne null si la ville n'existe pas *ou n'est pas visible* — l'appelant en fait un
+ * `notFound()` côté serveur.
  *
- * Les deux jeux de slugs sont résolus **ensemble**, dans une seule requête
- * `.in('slug', …)`. `excludeCategoryId` est renseigné même quand des catégories sont
- * sélectionnées : la sélection peut être vidée côté client (bouton « Tout ») et
- * l'exclusion doit alors reprendre effet. Ne pas la résoudre dans ce cas laissait les
- * guinguettes réapparaître dans le feed « Actus » après un retour à « Tout ».
+ * La visibilité n'est pas testée ici : la RLS de la migration 016 ne rend une ville
+ * dépubliée qu'à un administrateur. Avec le client de session, une ville dépubliée est
+ * donc simplement absente du résultat, et le `notFound()` tombe tout seul. C'est
+ * volontaire : la règle vit à un seul endroit, la base, plutôt que dans chaque `.eq()`
+ * qu'il faudrait penser à écrire.
+ *
+ * Les catégories sont ramenées par imbrication plutôt que par une seconde requête :
+ * leurs slugs ne sont plus uniques globalement (une contrainte `UNIQUE (city_id, slug)`
+ * a remplacé l'unicité sur `slug`), donc un `.in('slug', …)` non filtré ramènerait les
+ * catégories des autres villes. Les résoudre après la ville coûterait un aller-retour
+ * en série sur le chemin critique du premier rendu.
+ *
+ * `excludeCategoryId` est renseigné même quand des catégories sont sélectionnées : la
+ * sélection peut être vidée côté client (bouton « Tout ») et l'exclusion doit alors
+ * reprendre effet. Ne pas la résoudre dans ce cas laissait la catégorie mise en avant
+ * réapparaître dans le feed « Actus » après un retour à « Tout ».
  *
  * `queryArticles` donne la priorité à `categoryIds` : les deux ne s'appliquent jamais
  * en même temps.
  */
-export async function resolveFeedContext(
+export async function resolveCityFeed(
   supabase: SupabaseClient,
   citySlug: string,
-  categorySlugs: string[] = [],
-  excludeCategorySlug?: string
-): Promise<FeedContext | null> {
-  const slugsToResolve = [
-    ...new Set([...categorySlugs, ...(excludeCategorySlug ? [excludeCategorySlug] : [])]),
-  ]
+  categorySlugs: string[] = []
+): Promise<CityFeedResolution | null> {
+  const { data, error } = await supabase
+    .from('cities')
+    .select(
+      'id,name,slug,published,spotlight_category_id, categories(id,city_id,name,slug,icon,color,display_order,created_at)'
+    )
+    .eq('slug', citySlug)
+    .maybeSingle()
 
-  const [{ data: city }, { data: categories }] = await Promise.all([
-    supabase.from('cities').select('id,name').eq('slug', citySlug).maybeSingle(),
-    slugsToResolve.length > 0
-      ? supabase.from('categories').select('id,slug').in('slug', slugsToResolve)
-      : Promise.resolve({ data: [] as { id: number; slug: string }[] }),
-  ])
+  if (error) {
+    console.error('[Feed] résolution de ville impossible:', error)
+    return null
+  }
+  if (!data) return null
 
-  if (!city) return null
+  const city = data as unknown as {
+    id: number
+    name: string
+    spotlight_category_id: number | null
+    categories: Category[] | null
+  }
 
-  const resolved = city as { id: number; name: string }
-  const bySlug = new Map(
-    ((categories ?? []) as { id: number; slug: string }[]).map((r) => [r.slug, r.id])
+  // PostgREST ne garantit pas l'ordre d'une relation imbriquée : on trie ici, avec la
+  // même règle que partout ailleurs (display_order puis name, le nom départageant pour
+  // que l'ordre ne dépende pas de ce que Postgres renvoie en premier).
+  const categories = [...(city.categories ?? [])].sort(
+    (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name, 'fr')
   )
 
+  const spotlight = city.spotlight_category_id
+    ? (categories.find((c) => c.id === city.spotlight_category_id) ?? null)
+    : null
+
+  const bySlug = new Map(categories.map((c) => [c.slug, c.id]))
+
   return {
-    cityId: resolved.id,
-    cityName: resolved.name,
-    categoryIds: categorySlugs
-      .map((slug) => bySlug.get(slug))
-      .filter((id): id is number => typeof id === 'number'),
-    excludeCategoryId: excludeCategorySlug ? (bySlug.get(excludeCategorySlug) ?? null) : null,
+    context: {
+      cityId: city.id,
+      cityName: city.name,
+      categoryIds: categorySlugs
+        .map((slug) => bySlug.get(slug))
+        .filter((id): id is number => typeof id === 'number'),
+      excludeCategoryId: spotlight?.id ?? null,
+    },
+    categories,
+    spotlight,
   }
 }
 

@@ -14,11 +14,12 @@ export default function NotFound() {
       <p className="mt-2 text-sm text-gray-600">
         Le lien est peut-être ancien, ou la ville n&apos;est pas encore couverte.
       </p>
+{/* Vers la racine, qui renvoie sur la dernière ville visitée. */}
       <Link
-        href="/la-chapelle-sur-erdre"
+        href="/"
         className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus-ring"
       >
-        Voir les actus de La Chapelle-sur-Erdre
+        Voir les actualités
       </Link>
     </div>
   )

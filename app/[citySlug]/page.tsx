@@ -3,12 +3,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminUser } from '@/lib/authz'
-import { resolveFeedContext, queryArticles, type FeedContext } from '@/lib/feed/query'
+import { resolveCityFeed, queryArticles, type FeedContext } from '@/lib/feed/query'
 import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -20,11 +20,6 @@ function readParam(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? ''
 }
 
-function readTab(value: string | string[] | undefined): HomeTab {
-  const raw = readParam(value)
-  return isHomeTab(raw) ? raw : 'actus'
-}
-
 export async function generateMetadata(props: PageProps<'/[citySlug]'>): Promise<Metadata> {
   const { citySlug } = await props.params
   const supabase = await createClient()
@@ -34,6 +29,8 @@ export async function generateMetadata(props: PageProps<'/[citySlug]'>): Promise
     .eq('slug', citySlug)
     .maybeSingle()
 
+  // Ville inconnue ou dépubliée (la RLS ne la rend qu'aux administrateurs) : pas de
+  // métadonnées à produire, la page renverra 404.
   if (!city) return {}
 
   const { name, description } = city as { name: string; description: string | null }
@@ -53,46 +50,38 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   const { citySlug } = await props.params
   const searchParams = await props.searchParams
 
-  const tab = readTab(searchParams.tab)
-  const isGuinguettes = tab === 'guinguettes'
-
+  const tab = toHomeTab(readParam(searchParams.tab))
   const supabase = await createClient()
 
-  // Étage 1 — la coquille. Deux requêtes courtes seulement : sans elles on ne peut ni
-  // titrer la page ni dessiner les pastilles. Tout le reste part en streaming.
-  const [{ data: categories }, { data: auth }] = await Promise.all([
-    supabase.from('categories').select('*').order('display_order').order('name'),
-    supabase.auth.getUser(),
-  ])
+  // Étage 1 — la coquille. Une seule requête : la ville, ses catégories et sa catégorie
+  // mise en avant arrivent ensemble (voir `resolveCityFeed`). Tout le reste part en
+  // streaming.
+  const resolution = await resolveCityFeed(supabase, citySlug)
 
-  const categoryList = (categories ?? []) as Category[]
-  // Sur l'onglet Actus, les guinguettes ont leur propre onglet : elles ne doivent pas
-  // apparaître dans les pastilles, ni pouvoir être sélectionnées via l'URL.
-  const selectableCategories = isGuinguettes
-    ? categoryList
-    : categoryList.filter((c) => c.slug !== GUINGUETTES_SLUG)
+  // Slug inconnu, ou ville dépubliée vue par un non-administrateur : la RLS ne l'a pas
+  // rendue, donc `resolution` est null. Avant, la page affichait le slug brut en titre
+  // au-dessus d'un feed vide.
+  if (!resolution) notFound()
 
-  const selectedCategories = isGuinguettes
+  const { categories, spotlight } = resolution
+  // Sans catégorie mise en avant, la ville n'a pas d'onglet thématique : une demande
+  // `?tab=spotlight` doit retomber sur Actus plutôt que rendre un onglet fantôme.
+  const effectiveTab: HomeTab = tab === 'spotlight' && !spotlight ? 'actus' : tab
+  const isSpotlight = effectiveTab === 'spotlight'
+
+  // La catégorie mise en avant a son propre onglet : elle ne doit apparaître ni dans les
+  // pastilles du feed Actus, ni pouvoir y être sélectionnée via l'URL.
+  const selectableCategories = spotlight
+    ? categories.filter((c) => c.id !== spotlight.id)
+    : categories
+
+  const selectedCategories = isSpotlight
     ? []
     : parseCategoryParam(searchParams.cat, selectableCategories)
 
+  const { data: auth } = await supabase.auth.getUser()
   const user = auth?.user ?? null
-
-  // Résolution du contexte et statut admin en parallèle : ni l'un ni l'autre ne dépend
-  // du résultat de l'autre, les enchaîner ajoutait un aller-retour au chemin critique.
-  const [context, isAdmin] = await Promise.all([
-    resolveFeedContext(
-      supabase,
-      citySlug,
-      isGuinguettes ? [GUINGUETTES_SLUG] : selectedCategories,
-      isGuinguettes ? undefined : GUINGUETTES_SLUG
-    ),
-    user ? isAdminUser(supabase, user.id) : Promise.resolve(false),
-  ])
-
-  // Slug de ville inconnu : avant, la page affichait le slug brut en titre au-dessus
-  // d'un feed vide, indiscernable d'une ville sans actualité.
-  if (!context) notFound()
+  const isAdmin = user ? await isAdminUser(supabase, user.id) : false
 
   const search = normalizeSearchText(readParam(searchParams.q))
   const range = parseDateParam(searchParams.d)
@@ -100,14 +89,26 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
 
   // Les onglets Favoris et Résumés IA ont leur propre chargement : pas de slot de feed
   // à préparer pour eux.
-  const needsFeed = tab === 'actus' || isGuinguettes
+  const needsFeed = effectiveTab === 'actus' || isSpotlight
+
+  // Le contexte du slot dépend de l'onglet : l'onglet thématique ne garde que sa
+  // catégorie, l'onglet Actus l'exclut (ou applique la sélection de pastilles).
+  const context: FeedContext = isSpotlight
+    ? { ...resolution.context, categoryIds: spotlight ? [spotlight.id] : [], excludeCategoryId: null }
+    : {
+        ...resolution.context,
+        categoryIds: selectedCategories
+          .map((slug) => categories.find((c) => c.slug === slug)?.id)
+          .filter((id): id is number => typeof id === 'number'),
+      }
 
   return (
     <CityHomePage
       citySlug={citySlug}
-      cityName={context.cityName}
-      tab={tab}
-      categories={categoryList}
+      cityName={resolution.context.cityName}
+      tab={effectiveTab}
+      categories={selectableCategories}
+      spotlight={spotlight}
       userId={user?.id ?? null}
       isAdmin={isAdmin}
       horizon={horizon}
@@ -120,7 +121,8 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
           <FeedSlot
             citySlug={citySlug}
             context={context}
-            categories={categoryList}
+            categories={selectableCategories}
+            spotlightSlug={spotlight?.slug}
             userId={user?.id ?? null}
             isAdmin={isAdmin}
             horizon={horizon}
@@ -128,7 +130,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
             search={search}
             rawSearch={readParam(searchParams.q)}
             selectedCategories={selectedCategories}
-            isGuinguettes={isGuinguettes}
+            isSpotlight={isSpotlight}
           />
         </Suspense>
       )}
@@ -162,6 +164,7 @@ interface FeedSlotProps {
   citySlug: string
   context: FeedContext
   categories: Category[]
+  spotlightSlug?: string
   userId: string | null
   isAdmin: boolean
   horizon: string
@@ -169,13 +172,14 @@ interface FeedSlotProps {
   search: string
   rawSearch: string
   selectedCategories: string[]
-  isGuinguettes: boolean
+  isSpotlight: boolean
 }
 
 async function FeedSlot({
   citySlug,
   context,
   categories,
+  spotlightSlug,
   userId,
   isAdmin,
   horizon,
@@ -183,7 +187,7 @@ async function FeedSlot({
   search,
   rawSearch,
   selectedCategories,
-  isGuinguettes,
+  isSpotlight,
 }: FeedSlotProps) {
   const supabase = await createClient()
 
@@ -208,12 +212,12 @@ async function FeedSlot({
   return (
     <ArticleFeed
       citySlug={citySlug}
-      categorySlug={isGuinguettes ? GUINGUETTES_SLUG : undefined}
-      excludeCategorySlug={isGuinguettes ? undefined : GUINGUETTES_SLUG}
+      categorySlug={isSpotlight ? spotlightSlug : undefined}
+      excludeCategorySlug={isSpotlight ? undefined : spotlightSlug}
       canManageContent={isAdmin}
       hideHeader
       hideMiniCalendar
-      hideCategoryTabs={isGuinguettes}
+      hideCategoryTabs={isSpotlight}
       categories={categories}
       userId={userId}
       feedContext={context}

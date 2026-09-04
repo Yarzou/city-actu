@@ -78,6 +78,12 @@ function sameInstant(current: string | null, next: string): boolean {
   return Number.isFinite(a) && Number.isFinite(b) && a === b
 }
 
+/**
+ * Marge de sécurité sous le `maxDuration = 60` du cron : de quoi laisser une source en
+ * cours se terminer et la réponse partir.
+ */
+const FETCH_BUDGET_MS = 45_000
+
 export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]> {
   const supabase = getServiceClient()
 
@@ -94,8 +100,15 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
     .order('id', { ascending: true })
 
   if (citySlug) {
-    const { data: city } = await supabase.from('cities').select('id').eq('slug', citySlug).single()
-    if (city) query = query.eq('city_id', city.id)
+    const { data: city } = await supabase.from('cities').select('id').eq('slug', citySlug).maybeSingle()
+    // Slug inconnu : on ne collecte rien. Avant, la requête restait **non filtrée** et
+    // un slug mal orthographié déclenchait la collecte de toutes les villes au lieu
+    // d'échouer — silencieusement, et avec le budget de temps qui va avec.
+    if (!city) {
+      console.error('[Orchestrator] Ville inconnue, aucune collecte:', citySlug)
+      return []
+    }
+    query = query.eq('city_id', city.id)
   }
 
   const { data: sources, error } = await query
@@ -104,10 +117,30 @@ export async function fetchAllSources(citySlug?: string): Promise<FetchResult[]>
     return []
   }
 
+  /*
+   * Garde d'échéance.
+   *
+   * Le cron tourne avec `maxDuration = 60` (plafond du plan Hobby) pour un run nominal
+   * de 15 à 40 s **par ville** : au-delà de deux villes fournies, Vercel coupe la
+   * fonction en plein milieu, éventuellement entre deux écritures. On s'arrête donc
+   * proprement avant la limite, en signalant ce qui n'a pas été traité.
+   *
+   * Ce n'est qu'un garde-fou : la vraie réponse à N villes est de scinder le cron par
+   * ville ou d'allonger `maxDuration` sur un plan payant.
+   */
+  const startedAt = Date.now()
   const results: FetchResult[] = []
-  for (const source of sources as Source[]) {
-    const result = await fetchSource(source)
-    results.push(result)
+  const all = sources as Source[]
+
+  for (const [index, source] of all.entries()) {
+    if (Date.now() - startedAt > FETCH_BUDGET_MS) {
+      const skipped = all.length - index
+      console.warn(
+        `[Orchestrator] Budget de ${FETCH_BUDGET_MS} ms atteint : ${skipped} source(s) non traitée(s), reprise au prochain passage.`
+      )
+      break
+    }
+    results.push(await fetchSource(source))
     await sleep(500)
   }
   return results

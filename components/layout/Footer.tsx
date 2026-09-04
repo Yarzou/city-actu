@@ -8,7 +8,9 @@ export function Footer() {
         <div className="flex items-center gap-2">
           <Newspaper className="size-4 text-brand-600" />
           <span className="font-medium text-gray-700">Ville Actu</span>
-          <span>— Actualités de La Chapelle-sur-Erdre</span>
+          {/* Générique : le pied de page vit dans le layout racine et n'a pas de ville
+              sur /profil ou /a-propos, et l'application en couvre désormais plusieurs. */}
+          <span>— Actualités locales</span>
         </div>
         <nav className="flex items-center gap-4">
           <Link href="/a-propos" className="inline-link py-2 hover:text-gray-900 transition-colors focus-ring">À propos</Link>

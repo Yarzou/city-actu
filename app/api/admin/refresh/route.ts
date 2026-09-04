@@ -28,16 +28,21 @@ export async function POST(request: Request) {
 
   let sourceId: number | undefined
   let cityId: number | undefined
+  let citySlug: string | undefined
   try {
     const body = await request.json().catch(() => ({}))
     if (body.sourceId) sourceId = Number(body.sourceId)
     if (body.cityId) cityId = Number(body.cityId)
+    if (body.citySlug) citySlug = String(body.citySlug)
   } catch {}
 
   try {
+    // `citySlug` est bien transmis : la route lisait un `cityId` du corps sans jamais
+    // le passer à `fetchAllSources`, donc un rafraîchissement « de cette ville »
+    // recollectait toutes les villes tout en étiquetant le résumé d'une seule.
     const results = sourceId
       ? await fetchSourceById(sourceId)
-      : await fetchAllSources()
+      : await fetchAllSources(citySlug)
 
     const summary = results.reduce(
       (acc, r) => ({

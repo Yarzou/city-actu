@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Newspaper, Rss, CalendarDays, Database } from 'lucide-react'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { CITY_COOKIE, listVisibleCities, pickCitySlug } from '@/lib/feed/cities'
 
 /**
  * Le pied de page pointait vers `/a-propos` sur toutes les pages du site, alors que
@@ -34,16 +36,31 @@ const SOURCE_KINDS = [
 
 export default async function AboutPage() {
   const supabase = await createClient()
+  const cookieStore = await cookies()
+
+  /*
+   * La ville est celle mémorisée par le cookie, revalidée contre les villes visibles.
+   *
+   * Avant : `from('cities').select('name,slug').limit(1).maybeSingle()` — **sans aucun
+   * filtre**, donc une ville arbitraire (la première que Postgres renvoyait) présentée
+   * comme « la » ville, avec un repli codé en dur. Sur une route sans slug comme
+   * celle-ci, il faut la même résolution que la racine.
+   */
+  const cities = await listVisibleCities(supabase)
+  const citySlug = pickCitySlug(cities, cookieStore.get(CITY_COOKIE)?.value)
+  const city = cities.find((c) => c.slug === citySlug) ?? null
+  const cityName = city?.name ?? 'votre commune'
 
   // Compté à la lecture plutôt que codé en dur : la liste des sources est éditable
   // depuis l'administration, un nombre figé ici deviendrait faux au premier ajout.
-  const [{ count: sourceCount }, { data: city }] = await Promise.all([
-    supabase.from('sources').select('id', { count: 'exact', head: true }).eq('active', true),
-    supabase.from('cities').select('name,slug').limit(1).maybeSingle(),
-  ])
-
-  const cityName = (city as { name: string } | null)?.name ?? 'La Chapelle-sur-Erdre'
-  const citySlug = (city as { slug: string } | null)?.slug ?? 'la-chapelle-sur-erdre'
+  // Et compté **pour cette ville** : la requête additionnait toutes les villes.
+  const { count: sourceCount } = city
+    ? await supabase
+        .from('sources')
+        .select('id', { count: 'exact', head: true })
+        .eq('active', true)
+        .eq('city_id', city.id)
+    : { count: 0 }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6 lg:px-8">
@@ -90,7 +107,7 @@ export default async function AboutPage() {
       </p>
 
       <Link
-        href={`/${citySlug}`}
+        href={citySlug ? `/${citySlug}` : '/'}
         className="mt-10 inline-flex min-h-11 items-center rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus-ring"
       >
         Voir les actus

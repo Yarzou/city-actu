@@ -10,7 +10,7 @@ import { ArticleCard } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
-import { queryArticles, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
+import { queryArticles, resolveCityFeed, type FeedContext } from '@/lib/feed/query'
 import { parisHorizonISO, buildCivilFromDate } from '@/lib/feed/paris-time'
 import {
   deserializeRangeBounds,
@@ -458,22 +458,30 @@ export function ArticleFeed({
       // Chemin non hydraté : changement d'onglet côté client, la page serveur n'a
       // pas préparé ce feed.
       hasInitializedRef.current = false
-      const [context, { data: cats }, { data: auth }] = await Promise.all([
-        resolveFeedContext(supabase, citySlug, categorySlug ? [categorySlug] : selectedCategories, excludeCategorySlug),
-        categoryList
-          ? Promise.resolve({ data: categoryList })
-          : supabase.from('categories').select('*').order('display_order').order('name'),
+      const [resolution, { data: auth }] = await Promise.all([
+        // Une seule requête : la ville ramène ses catégories par imbrication. Leurs
+        // slugs ne sont plus uniques globalement, une requête `categories` à plat
+        // ramènerait celles des autres villes.
+        resolveCityFeed(supabase, citySlug, categorySlug ? [categorySlug] : selectedCategories),
         initialUserId !== null ? Promise.resolve({ data: { user: null } }) : supabase.auth.getUser(),
       ])
 
-      setCategories(cats ?? [])
       const resolvedUserId = initialUserId ?? auth?.user?.id ?? null
       setUserId(resolvedUserId)
 
-      if (!context) {
+      if (!resolution) {
         setLoading(false)
         return
       }
+
+      // Les catégories du serveur, si elles ont été passées, sont déjà filtrées de la
+      // catégorie mise en avant : on les préfère à la liste brute de la résolution.
+      setCategories(categoryList ?? resolution.categories)
+
+      // L'onglet thématique ne garde que sa catégorie ; l'onglet Actus l'exclut.
+      const context = categorySlug
+        ? { ...resolution.context, excludeCategoryId: null }
+        : resolution.context
 
       contextRef.current = context
       setCityName(context.cityName)
@@ -664,7 +672,12 @@ export function ArticleFeed({
     setRefreshing(true)
     setRefreshFeedback(null)
     try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
+      // Scopé à la ville du feed, comme le bouton de la page ville.
+      const res = await fetch('/api/admin/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ citySlug }),
+      })
       const data = await res.json()
       if (res.status === 401) {
         setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })

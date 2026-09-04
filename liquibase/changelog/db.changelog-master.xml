@@ -50,4 +50,7 @@
   <!-- Localisation des articles : champ LOCATION des exports .ics -->
   <include file="liquibase/changelog/015-article-location.sql"/>
 
+  <!-- Multi-villes : publication, catégories par ville, onglet mis en avant, RLS admin -->
+  <include file="liquibase/changelog/016-multi-city.sql"/>
+
 </databaseChangeLog>
