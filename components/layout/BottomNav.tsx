@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, Sparkles } from 'lucide-react'
+import { Newspaper, Wine, Heart, Sparkles, Settings, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -21,21 +21,36 @@ const DEFAULT_CITY_SLUG = 'la-chapelle-sur-erdre'
 const HIDDEN_PREFIXES = ['/auth']
 
 /**
- * Quatre entrées, pas cinq : `/profil` est réservé à l'administration et renvoie 404
- * aux autres, la barre ne doit pas mener à une impasse. Connexion, déconnexion et
- * accès à l'administration vivent dans le menu hamburger, toujours présent en haut.
- *
- * Quatre entrées à 25% laissent ~94px chacune sur un écran de 375px : les libellés
- * tiennent sans être tronqués.
+ * Onglets de la page ville. Quatre entrées pour tout le monde, cinq pour un
+ * administrateur (voir `isAdmin`) : à 20% chacune, ~75px sur un écran de 375px, ce
+ * que les libellés courts absorbent.
  */
-const ITEMS = [
+const TAB_ITEMS = [
   { tab: null,          label: 'Actus',       icon: Newspaper },
   { tab: 'guinguettes', label: 'Guinguettes', icon: Wine },
   { tab: 'favoris',     label: 'Favoris',     icon: Heart },
   { tab: 'ia',          label: 'IA',          icon: Sparkles },
 ] as const
 
-export function BottomNav() {
+interface BottomNavProps {
+  /**
+   * Résolu côté serveur dans le layout racine. Conditionne l'entrée « Admin » :
+   * `/profil` renvoie 404 aux non-administrateurs, la barre ne doit jamais mener à une
+   * impasse. C'est aussi le seul accès à l'administration sur mobile depuis qu'elle a
+   * été retirée du menu hamburger — les deux points d'entrée faisaient doublon.
+   */
+  isAdmin?: boolean
+}
+
+interface NavEntry {
+  key: string
+  href: string
+  label: string
+  icon: LucideIcon
+  isActive: boolean
+}
+
+export function BottomNav({ isAdmin = false }: BottomNavProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -54,6 +69,24 @@ export function BottomNav() {
   const onCityRoot = pathname === cityRoot
   const activeTab = onCityRoot ? searchParams.get('tab') : null
 
+  const entries: NavEntry[] = TAB_ITEMS.map(({ tab, label, icon }) => ({
+    key: label,
+    href: tab ? `${cityRoot}?tab=${tab}` : cityRoot,
+    label,
+    icon,
+    isActive: onCityRoot && activeTab === tab,
+  }))
+
+  if (isAdmin) {
+    entries.push({
+      key: 'admin',
+      href: '/profil',
+      label: 'Admin',
+      icon: Settings,
+      isActive: pathname.startsWith('/profil'),
+    })
+  }
+
   return (
     <nav
       data-chrome
@@ -62,26 +95,21 @@ export function BottomNav() {
       style={{ paddingLeft: 'var(--sal)', paddingRight: 'var(--sar)' }}
     >
       <ul className="flex items-stretch">
-        {ITEMS.map(({ tab, label, icon: Icon }) => {
-          const isActive = onCityRoot && activeTab === tab
-          const href = tab ? `${cityRoot}?tab=${tab}` : cityRoot
-
-          return (
-            <li key={label} className="flex-1">
-              <Link
-                href={href}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn(
-                  'flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors focus-ring',
-                  isActive ? 'text-brand-700' : 'text-gray-500'
-                )}
-              >
-                <Icon className={cn('size-5', isActive && 'fill-brand-100')} />
-                {label}
-              </Link>
-            </li>
-          )
-        })}
+        {entries.map(({ key, href, label, icon: Icon, isActive }) => (
+          <li key={key} className="flex-1">
+            <Link
+              href={href}
+              aria-current={isActive ? 'page' : undefined}
+              className={cn(
+                'flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors focus-ring',
+                isActive ? 'text-brand-700' : 'text-gray-500'
+              )}
+            >
+              <Icon className={cn('size-5', isActive && 'fill-brand-100')} />
+              {label}
+            </Link>
+          </li>
+        ))}
       </ul>
     </nav>
   )

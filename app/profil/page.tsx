@@ -41,9 +41,15 @@ export default async function AdminPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Administration</h1>
-        <p className="mt-1 text-sm text-gray-500">{user.email}</p>
+      {/*
+        Titre en `sr-only` : la page n'a qu'un seul contenu et le titre en gros
+        n'apportait rien à l'écran. Conservé pour les lecteurs d'écran plutôt que
+        supprimé — une page sans <h1> annonçable est une régression d'accessibilité.
+        Même pratique que le titre de ville sur mobile.
+      */}
+      <div className="mb-4">
+        <h1 className="sr-only">Administration</h1>
+        <p className="text-sm text-gray-500">{user.email}</p>
       </div>
       <AdminSourcesPanel />
     </div>

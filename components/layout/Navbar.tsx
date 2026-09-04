@@ -207,26 +207,22 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
             </Link>
           ))}
           <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
+            {/*
+              Pas de lien « Administration » ici : sur mobile, l'accès passe par
+              l'entrée « Admin » de la barre de navigation basse, qui n'apparaît elle
+              aussi que pour un administrateur. Deux points d'entrée pour la même page
+              faisaient doublon. La version desktop de la barre haute le garde, elle :
+              il n'y a pas de barre basse au-delà de 640px.
+            */}
             {user ? (
-              <>
-                {isAdmin && (
-                  <Link
-                    href="/profil"
-                    className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring"
-                  >
-                    <Settings className="size-4" />
-                    Administration
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={signOut}
-                  className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-left text-gray-700 hover:bg-gray-100 font-medium focus-ring"
-                >
-                  <LogOut className="size-4" />
-                  Déconnexion
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={signOut}
+                className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-left text-gray-700 hover:bg-gray-100 font-medium focus-ring"
+              >
+                <LogOut className="size-4" />
+                Déconnexion
+              </button>
             ) : (
               <>
                 <Link href="/auth/login" className="px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring">

@@ -81,7 +81,9 @@ function SourceHealthBadge({ source }: { source: Source }) {
 }
 
 export function AdminSourcesPanel() {
-  const [sourcesOpen, setSourcesOpen] = useState(true)
+  // Replié par défaut, comme « Gestion des catégories » et l'historique des résumés :
+  // la page s'ouvre sur la liste des sections plutôt que sur un mur de contenu.
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [cities, setCities]         = useState<City[]>([])
