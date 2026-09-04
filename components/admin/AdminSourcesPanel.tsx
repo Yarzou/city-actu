@@ -2,20 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags, Palette } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
-
-const THEME_OPTIONS: { value: ThemeChoice; label: string; title: string }[] = [
-  { value: 'light',  label: '☀️', title: 'Clair' },
-  { value: 'dark',   label: '🌙', title: 'Sombre' },
-  { value: 'system', label: '💻', title: 'Système' },
-]
-
 const SOURCE_TYPE_BADGE: Record<SourceType, string> = {
   rss:      'bg-blue-100 text-blue-700',
   scraping: 'bg-orange-100 text-orange-700',
@@ -89,8 +81,6 @@ function SourceHealthBadge({ source }: { source: Source }) {
 }
 
 export function AdminSourcesPanel() {
-  const { theme, setTheme } = useTheme()
-  const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [sourcesOpen, setSourcesOpen] = useState(true)
   const [sources, setSources]       = useState<Source[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -589,50 +579,6 @@ export function AdminSourcesPanel() {
 
   return (
     <div>
-      {/* ── Apparence ── */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-        <div className="flex items-center border-b border-gray-100">
-          <button
-            onClick={() => setAppearanceOpen(o => !o)}
-            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
-          >
-            <span className="flex items-center gap-3">
-              <Palette size={17} className="text-brand-600 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-800">Apparence</span>
-            </span>
-            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', appearanceOpen && 'rotate-180')} />
-          </button>
-        </div>
-
-        {appearanceOpen && (
-          <div className="p-4">
-            <div className="flex items-center justify-between gap-4 bg-gray-50 rounded-2xl border border-gray-200 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-gray-800">Thème de l&apos;interface</p>
-                <p className="text-xs text-gray-400">Clair, sombre ou basé sur le système</p>
-              </div>
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
-                {THEME_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setTheme(opt.value)}
-                    title={opt.title}
-                    className={cn(
-                      'px-2.5 py-1.5 rounded-lg text-sm transition-all',
-                      theme === opt.value
-                        ? 'bg-white text-gray-900 shadow-sm font-medium'
-                        : 'text-gray-500 hover:text-gray-700'
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* ── Gestion des sources ── */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
         <div className="flex items-center border-b border-gray-100">

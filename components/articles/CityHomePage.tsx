@@ -7,6 +7,8 @@ import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
 import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
+import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { Category } from '@/lib/types'
 
 // Chargés à la demande : un seul onglet est rendu à la fois, et « Actus » est celui
@@ -82,7 +84,8 @@ export function CityHomePage({
         setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
       } else if (data.ok) {
         const s = data.summary
-        setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)` })
+        const updated = s.updated ? `, ${s.updated} mis à jour` : ''
+        setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)${updated}` })
       } else {
         setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
       }
@@ -93,23 +96,58 @@ export function CityHomePage({
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
 
+  // Sur mobile, le geste remplace le bouton : même action, même condition d'accès.
+  // Il n'est armé que pour qui peut réellement rafraîchir, sinon on neutraliserait le
+  // tirer-pour-rafraîchir natif du navigateur sans rien mettre à la place.
+  const isDesktop = useIsDesktop()
+  const canRefresh = Boolean(userId && isAdmin)
+  const pullEnabled = canRefresh && !isDesktop
+  const { pull, armed } = usePullToRefresh({ onRefresh: handleRefresh, enabled: pullEnabled })
+
+  // Pendant le rafraîchissement le doigt est relâché, donc `pull` est retombé à zéro :
+  // l'indicateur resterait collé sous l'en-tête. On le maintient à hauteur de seuil.
+  const indicatorTravel = refreshing ? 64 : pull
+  const showIndicator = pullEnabled && (pull > 0 || refreshing)
+
   const isServerRenderedTab = tab === serverTab
   const isFeedTab = tab === 'actus' || tab === 'guinguettes'
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-12">
-      {/* City header */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">{cityName}</h1>
-        {userId && isAdmin && (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
+      {showIndicator && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-x-0 z-40 flex justify-center transition-[top] duration-150"
+          style={{ top: `calc(var(--header-h) + ${indicatorTravel}px - 2.75rem)` }}
+        >
+          <span className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md">
+            <RefreshCw
+              className={cn('size-5 text-brand-600', refreshing && 'animate-spin')}
+              // Tant que le doigt tire, l'icône suit le geste plutôt que de tourner
+              // toute seule : c'est ce qui rend le franchissement du seuil lisible.
+              style={refreshing ? undefined : { transform: `rotate(${pull * 3}deg)`, opacity: armed ? 1 : 0.5 }}
+            />
+          </span>
+        </div>
+      )}
+
+      {/*
+        City header. Le titre passe en `sr-only` sur mobile : il est repris dans la
+        barre haute, à côté de « Ville Actu ». `sr-only` et non `hidden` pour que la
+        page garde un <h1> annonçable — et pour ne pas laisser deux titres concurrents
+        à l'écran.
+      */}
+      <div className="flex items-center justify-between gap-4 sm:mb-6">
+        <h1 className="sr-only sm:not-sr-only text-3xl font-bold text-gray-900 tracking-tight">{cityName}</h1>
+        {canRefresh && (
           <button
             onClick={handleRefresh}
             disabled={refreshing}
             aria-label="Rafraîchir les sources"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring"
+            className="hidden min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring sm:inline-flex"
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
+            <span>{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
           </button>
         )}
       </div>

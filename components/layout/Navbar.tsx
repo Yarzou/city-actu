@@ -52,6 +52,13 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
   // Close menu on route change
   useEffect(() => { setOpen(false) }, [pathname])
 
+  // Le nom de la ville se lit dans l'URL : la Navbar vit dans le layout racine et n'a
+  // pas accès aux props de la page — même mécanique que BottomNav. Il n'est affiché
+  // qu'en mobile, où le titre de la page a été retiré pour rendre la hauteur d'écran
+  // au feed ; au-delà de 640px le <h1> de la page reprend ce rôle.
+  const firstSegment = pathname.split('/').filter(Boolean)[0]
+  const cityLabel = NAV_LINKS.find(({ href }) => href === `/${firstSegment}`)?.label ?? null
+
   // Prevent body scroll when menu is open
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
@@ -85,11 +92,21 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
         style={{ paddingTop: 'var(--sat)', paddingLeft: 'var(--sal)', paddingRight: 'var(--sar)' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          {/* Logo */}
-          <Link href="/la-chapelle-sur-erdre" className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors focus-ring">
-            <Newspaper className="size-5" />
-            <span>Ville Actu</span>
-          </Link>
+          {/* Logo, suivi du nom de la ville en mobile */}
+          <div className="flex min-w-0 items-baseline gap-2">
+            <Link href="/la-chapelle-sur-erdre" className="flex items-center gap-2 shrink-0 font-semibold text-brand-700 hover:text-brand-900 transition-colors focus-ring">
+              <Newspaper className="size-5 self-center" />
+              <span>Ville Actu</span>
+            </Link>
+            {cityLabel && (
+              // aria-hidden : le <h1> de la page porte déjà ce nom pour les lecteurs
+              // d'écran, en `sr-only` sur mobile. L'annoncer deux fois serait du bruit.
+              <span aria-hidden="true" className="min-w-0 truncate text-sm text-gray-500 sm:hidden">
+                <span className="mr-2 text-gray-300">/</span>
+                {cityLabel}
+              </span>
+            )}
+          </div>
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1 text-sm">
