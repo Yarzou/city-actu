@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags, ExternalLink } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
@@ -939,6 +939,17 @@ export function AdminSourcesPanel() {
               )}
 
               <div className="flex items-center gap-1 pt-1 border-t border-gray-100">
+                {/*
+                  Un <a> et non un <button> + window.open : le clic du milieu, « ouvrir
+                  dans un nouvel onglet » et la copie du lien continuent de marcher, et
+                  l'URL est visible dans la barre d'état au survol — précisément ce qu'on
+                  veut vérifier ici. `noreferrer` en plus de `noopener` pour ne pas
+                  annoncer l'URL d'administration au site source.
+                */}
+                <a href={source.url} target="_blank" rel="noopener noreferrer"
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Ouvrir le lien dans un nouvel onglet">
+                  <ExternalLink className="size-4" />
+                </a>
                 <button onClick={() => testFetch(source.id)} disabled={fetching === source.id}
                   className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Tester le fetch">
                   <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
@@ -1099,6 +1110,11 @@ export function AdminSourcesPanel() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
+                        {/* Voir le commentaire de la carte mobile : un <a>, pas un bouton. */}
+                        <a href={source.url} target="_blank" rel="noopener noreferrer"
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Ouvrir le lien dans un nouvel onglet">
+                          <ExternalLink className="size-4" />
+                        </a>
                         <button onClick={() => testFetch(source.id)} disabled={fetching === source.id}
                           className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Tester le fetch">
                           <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
