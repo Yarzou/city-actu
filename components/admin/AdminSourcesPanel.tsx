@@ -45,6 +45,9 @@ interface FetchResultDetail {
   sourceId: number
   fetched: number
   inserted: number
+  /** Optionnels : les littéraux de secours de testFetch ne les renseignent pas. */
+  updated?: number
+  unchanged?: number
   skipped: number
   errors: string[]
 }
@@ -98,7 +101,9 @@ export function AdminSourcesPanel() {
   const [fetchResult, setFetchResult] = useState<Record<number, FetchResultDetail>>({})
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<{
-    sources: number; fetched: number; inserted: number; skipped: number; errors: number
+    sources: number; fetched: number; inserted: number
+    updated?: number; unchanged?: number
+    skipped: number; errors: number
   } | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [aiSummary, setAiSummary] = useState<string | null>(null)
@@ -728,7 +733,8 @@ export function AdminSourcesPanel() {
         <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-800">
           <span>
             ✅ {refreshResult.sources} source(s) — {refreshResult.fetched} article(s) récupéré(s),{' '}
-            <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.skipped} ignoré(s)
+            <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.updated ?? 0} mis à jour,{' '}
+            {refreshResult.unchanged ?? 0} inchangé(s)
             {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
           </span>
           <button onClick={() => { setRefreshResult(null); setAiSummary(null) }} className="ml-4 text-green-600 hover:text-green-800">✕</button>
@@ -980,7 +986,7 @@ export function AdminSourcesPanel() {
                 <div className={cn('text-xs', hasErrors ? 'text-red-600' : 'text-green-600')}>
                   {hasErrors
                     ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
-                    : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés`}
+                    : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés, ${result.updated ?? 0} mis à jour`}
                 </div>
               )}
 
@@ -1120,7 +1126,7 @@ export function AdminSourcesPanel() {
                         <div className={cn('text-xs mt-1', hasErrors ? 'text-red-600' : 'text-green-600')}>
                           {hasErrors
                             ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
-                            : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés`
+                            : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés, ${result.updated ?? 0} mis à jour`
                           }
                         </div>
                       )}

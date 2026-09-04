@@ -11,7 +11,7 @@ Collecte automatiquement les actus via **RSS feeds** et **scraping web**, les ca
 - **Tailwind CSS v4**
 - **rss-parser** + **cheerio** pour l'agrégation
 - **Liquibase** pour les migrations
-- **Vercel Cron** pour le fetch automatique (toutes les heures)
+- **Vercel Cron** pour le fetch automatique (une fois par jour — plan Hobby)
 
 ## Installation
 

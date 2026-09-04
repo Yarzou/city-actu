@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio'
 import type { Source, ScrapingConfig } from '@/lib/types'
 import type { FetchedItem } from './rss'
+import { chunk } from './batch'
 import { parisWallClockToISO, parseFrenchTimeRange, parisDateISO } from './dates'
 
 const FETCH_HEADERS = {
@@ -112,6 +113,9 @@ function toISO(day: number, month: number, year: number, time: string | null = n
   const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   return parisWallClockToISO(iso, time)
 }
+
+/** Pages de détail récupérées en parallèle. Voir le commentaire sur l'appelant. */
+const DETAIL_CONCURRENCY = 4
 
 async function fetchDetailDates(
   url: string,
@@ -228,14 +232,23 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       items.push({ title, url, content_preview: content, image_url: image, published_at, event_end_date, location })
     })
 
-    // If detail_date_selector is configured, enrich each item with dates from its detail page
+    // If detail_date_selector is configured, enrich each item with dates from its detail page.
+    // Par lots de DETAIL_CONCURRENCY et non en série : chaque page a 10 s de timeout, et une
+    // liste d'agenda un peu fournie face à un serveur lent suffirait à épuiser à elle seule
+    // les 60 s allouées au cron (plan Hobby), faisant échouer toute l'ingestion. Le lot reste
+    // petit pour ne pas marteler le site de la mairie.
     if (config.detail_date_selector && items.length > 0) {
-      for (const item of items) {
-        if (!item.published_at && item.url) {
-          const dates = await fetchDetailDates(item.url, config.detail_date_selector)
-          item.published_at   = dates.published_at
-          item.event_end_date = dates.event_end_date
-        }
+      const selector = config.detail_date_selector
+      const pending = items.filter((item) => !item.published_at && item.url)
+
+      for (const batch of chunk(pending, DETAIL_CONCURRENCY)) {
+        await Promise.all(
+          batch.map(async (item) => {
+            const dates = await fetchDetailDates(item.url, selector)
+            item.published_at   = dates.published_at
+            item.event_end_date = dates.event_end_date
+          })
+        )
       }
     }
 

@@ -44,12 +44,16 @@ export async function POST(request: Request) {
         sources: acc.sources + 1,
         fetched: acc.fetched + r.fetched,
         inserted: acc.inserted + r.inserted,
+        updated: acc.updated + r.updated,
+        unchanged: acc.unchanged + r.unchanged,
         skipped: acc.skipped + r.skipped,
         errors: acc.errors + r.errors.length,
       }),
-      { sources: 0, fetched: 0, inserted: 0, skipped: 0, errors: 0 }
+      { sources: 0, fetched: 0, inserted: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 }
     )
 
+    // Volontairement `inserted` et non `inserted + updated` : un passage qui n'a fait que
+    // corriger des articles déjà connus ne doit ni appeler le LLM, ni écrire un résumé.
     let aiSummary: string | null = null
     if (summary.inserted > 0) {
       const allInserted = results.flatMap(r => r.insertedArticles)

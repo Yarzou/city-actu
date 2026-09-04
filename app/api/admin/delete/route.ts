@@ -30,9 +30,21 @@ export async function POST(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const query = id !== undefined
-    ? admin.from(table).delete().eq('id', id)
-    : admin.from(table).delete().neq('id', 0)
+  // Écarter UN article n'est pas une suppression mais un masquage. Un DELETE ne tiendrait
+  // pas : l'ingestion est en upsert, et le prochain cron recréerait la ligne tant que l'URL
+  // reste dans le flux source. `is_duplicate` est exclu de la liste blanche des champs
+  // rafraîchissables (lib/fetchers/index.ts), donc le cron ne le remet jamais à false ; et
+  // il masque déjà l'article partout — politique RLS « Public read articles », feed, digest
+  // et export .ics filtrent tous sur NOT is_duplicate.
+  //
+  // La purge de masse (pas d'`id`) reste un vrai DELETE : c'est une remise à zéro assumée,
+  // qui efface donc aussi les masquages.
+  const query =
+    id !== undefined
+      ? table === 'articles'
+        ? admin.from(table).update({ is_duplicate: true }).eq('id', id)
+        : admin.from(table).delete().eq('id', id)
+      : admin.from(table).delete().neq('id', 0)
 
   const { error } = await query
 

@@ -442,7 +442,9 @@ export function ArticleFeed({ citySlug, categorySlug, excludeCategorySlug, canMa
           next.delete(articleId)
           return next
         })
-        setRefreshFeedback({ ok: true, msg: 'Actu supprimée.' })
+        // « Masquée » et non « supprimée » : la ligne reste en base avec is_duplicate=true,
+        // sinon le prochain cron la recréerait tant que l'URL est dans le flux source.
+        setRefreshFeedback({ ok: true, msg: 'Actu masquée.' })
       } else {
         setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
       }
