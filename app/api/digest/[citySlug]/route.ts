@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { summarizeRecentArticles, describeLlmFailure } from '@/lib/llm/groq'
-import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso } from '@/lib/week'
+import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso, getCurrentParisWeekEndUtcIso } from '@/lib/week'
 
 // Sans cette ligne, la route tombait sur le `maxDuration` par défaut de Vercel, plus
 // court que l'appel au LLM sur un prompt long. Les deux autres routes de résumé
@@ -34,7 +34,13 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return Response.json({ error: 'Ville introuvable' }, { status: 404 })
   }
 
+  // Semaine calendaire en cours, **bornée des deux côtés**. Sans la borne haute, la
+  // requête embarquait les événements futurs de l'agenda — `published_at` porte la date
+  // de l'événement — et le tri décroissant les faisait passer devant : le « résumé de la
+  // semaine » pouvait ne contenir aucun article de la semaine. Voir
+  // `getCurrentParisWeekEndUtcIso`.
   const mondayUtcIso = getCurrentParisWeekMondayUtcIso()
+  const nextMondayUtcIso = getCurrentParisWeekEndUtcIso()
 
   const { data: articles } = await supabase
     .from('articles')
@@ -42,6 +48,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     .eq('city_id', city.id)
     .eq('is_duplicate', false)
     .gte('published_at', mondayUtcIso)
+    .lt('published_at', nextMondayUtcIso)
     .order('published_at', { ascending: false })
     .limit(40)
 
