@@ -6,10 +6,8 @@ import { useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, RefreshCw } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import type { FeedContext } from '@/lib/feed/query'
-import type { SerializedDateRange } from '@/lib/feed/date-params'
 import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
-import type { Category, FeedArticle } from '@/lib/types'
+import type { Category } from '@/lib/types'
 
 // Chargés à la demande : un seul onglet est rendu à la fois, et « Actus » est celui
 // par défaut. Les trois corps d'onglet partaient jusqu'ici dans le chunk initial.
@@ -26,19 +24,18 @@ const TABS: { id: HomeTab; label: string; icon: React.ReactNode }[] = [
 interface CityHomePageProps {
   citySlug: string
   cityName: string
-  /** L'onglet que le serveur a effectivement rendu — celui qui porte les données. */
+  /** L'onglet que le serveur a effectivement rendu — celui dont `children` porte le feed. */
   tab: HomeTab
   categories: Category[]
   userId: string | null
   isAdmin: boolean
-  feedContext: FeedContext
   horizon: string
-  initialArticles: FeedArticle[] | null
-  initialHasMore: boolean
-  initialError: string | null
-  initialFavorites: number[]
-  initialRange: SerializedDateRange | null
-  initialSearch: string
+  /**
+   * Le feed rendu par le serveur, derrière un `<Suspense>`. N'est affiché que pour
+   * l'onglet que le serveur a rendu : après un changement d'onglet côté client, il ne
+   * correspond plus à ce qui est demandé.
+   */
+  children?: React.ReactNode
 }
 
 export function CityHomePage({
@@ -48,14 +45,8 @@ export function CityHomePage({
   categories,
   userId,
   isAdmin,
-  feedContext,
   horizon,
-  initialArticles,
-  initialHasMore,
-  initialError,
-  initialFavorites,
-  initialRange,
-  initialSearch,
+  children,
 }: CityHomePageProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -75,6 +66,7 @@ export function CityHomePage({
     // Changer d'onglet remet les filtres à zéro : ils portent sur un feed précis.
     params.delete('d')
     params.delete('q')
+    params.delete('cat')
 
     const query = params.toString()
     window.history.pushState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
@@ -101,20 +93,8 @@ export function CityHomePage({
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
 
-  // Les données du rendu serveur ne valent que pour l'onglet qu'il a rendu. Après un
-  // changement d'onglet côté client, le feed se recharge lui-même (voir le `key`,
-  // qui force un montage propre plutôt qu'une réconciliation d'états croisés).
   const isServerRenderedTab = tab === serverTab
-  const feedProps = isServerRenderedTab
-    ? {
-        feedContext,
-        initialArticles,
-        initialHasMore,
-        initialError,
-        initialRange,
-        initialSearch,
-      }
-    : {}
+  const isFeedTab = tab === 'actus' || tab === 'guinguettes'
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-12">
@@ -139,11 +119,16 @@ export function CityHomePage({
         </p>
       )}
 
-      {/* Tab bar */}
+      {/*
+        Onglets : desktop uniquement. Sur mobile, la barre de navigation basse fait le
+        même travail, en fixe. Cette rangée était en `overflow-x-auto snap-x`, donc
+        elle glissait sous le doigt au moindre appui-déplacé — toute cette mécanique
+        est retirée, quatre onglets tiennent sans déborder au-delà de 640px.
+      */}
       <div
         role="tablist"
         aria-label="Sections"
-        className="edge-fade flex snap-x snap-mandatory overflow-x-auto scrollbar-hide border-b border-gray-200 mb-6 -mx-4 px-4 sm:mx-0 sm:px-0 sm:snap-none"
+        className="hidden sm:flex border-b border-gray-200 mb-6"
       >
         {TABS.map(({ id, label, icon }) => (
           <button
@@ -152,7 +137,7 @@ export function CityHomePage({
             aria-selected={tab === id}
             onClick={() => selectTab(id)}
             className={cn(
-              'shrink-0 snap-start inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap focus-ring',
+              'inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap focus-ring',
               tab === id
                 ? 'border-brand-600 text-brand-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -165,35 +150,23 @@ export function CityHomePage({
       </div>
 
       {/* Tab content */}
-      {tab === 'actus' && (
+      {isFeedTab && isServerRenderedTab && children}
+      {isFeedTab && !isServerRenderedTab && (
+        // Onglet atteint par un changement côté client : le serveur n'a pas préparé ce
+        // feed, il se charge lui-même. Le `key` force un montage propre plutôt qu'une
+        // réconciliation d'états croisés entre les deux feeds.
         <ArticleFeed
-          key="actus"
+          key={tab}
           citySlug={citySlug}
-          excludeCategorySlug={GUINGUETTES_SLUG}
+          categorySlug={tab === 'guinguettes' ? GUINGUETTES_SLUG : undefined}
+          excludeCategorySlug={tab === 'guinguettes' ? undefined : GUINGUETTES_SLUG}
           canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar
+          hideCategoryTabs={tab === 'guinguettes'}
           categories={categories}
           userId={userId}
           horizon={horizon}
-          initialFavorites={initialFavorites}
-          {...feedProps}
-        />
-      )}
-      {tab === 'guinguettes' && (
-        <ArticleFeed
-          key="guinguettes"
-          citySlug={citySlug}
-          categorySlug={GUINGUETTES_SLUG}
-          canManageContent={isAdmin}
-          hideHeader
-          hideMiniCalendar
-          hideCategoryTabs
-          categories={categories}
-          userId={userId}
-          horizon={horizon}
-          initialFavorites={initialFavorites}
-          {...feedProps}
         />
       )}
       {tab === 'favoris' && <FavoritesTab citySlug={citySlug} />}

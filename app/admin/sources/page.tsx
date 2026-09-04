@@ -1,41 +1,16 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { AdminSourcesPanel } from '@/components/admin/AdminSourcesPanel'
-import { createClient } from '@/lib/supabase/client'
-import { resolveAdminStatusClient } from '@/lib/admin-client'
-
-export default function AdminSourcesPage() {
-  const router = useRouter()
-  const [canAccess, setCanAccess] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    const supabase = createClient()
-
-    async function checkAccess() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.replace('/auth/login')
-        return
-      }
-
-      const isAdmin = await resolveAdminStatusClient(supabase, user.id)
-      if (!isAdmin) {
-        router.replace('/profil')
-        return
-      }
-      setCanAccess(true)
-    }
-    void checkAccess()
-  }, [router])
-
-  if (canAccess !== true) return null
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Gestion des sources</h1>
-      <AdminSourcesPanel />
-    </div>
-  )
+/**
+ * Ancien second point d'entrée vers le panneau d'administration, désormais une simple
+ * redirection vers `/profil`, qui en est l'unique hôte.
+ *
+ * Ce que montait cette page posait trois problèmes : le même `AdminSourcesPanel` en
+ * import **statique**, ce qui annulait pour ce chemin le découpage de code ; un garde
+ * purement client, donc le panneau était servi quel que soit le rôle ; et un rendu
+ * `null` pendant deux allers-retours successifs, sans indicateur — avec un état
+ * `canAccess` jamais mis à `false`, une redirection qui échouait laissait un écran
+ * blanc définitif.
+ */
+export default function AdminSourcesRedirect() {
+  redirect('/profil')
 }

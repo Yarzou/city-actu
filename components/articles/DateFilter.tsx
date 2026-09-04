@@ -53,19 +53,10 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
       role="group"
       aria-label="Filtrer par date"
     >
-      {/* Filtre actif : bouton d'annulation, affiché seulement quand il y a de quoi annuler */}
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange(null)}
-          aria-label={`Retirer le filtre ${value.label}`}
-          className={cn(PILL_BASE, 'border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100')}
-        >
-          <span aria-hidden="true">×</span>
-          {value.label}
-        </button>
-      )}
-
+      {/*
+        Plus de pastille « × Ce weekend » : elle ne servait à rien, les préréglages se
+        désélectionnant déjà d'un second appui.
+      */}
       {DATE_PRESETS.map((preset) => (
         <button
           key={preset}
@@ -82,28 +73,39 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
         Choix d'une date précise — mobile seulement (le mini-calendrier s'en charge
         sur desktop).
 
-        L'input est superposé au bouton en opacité nulle plutôt que caché en `sr-only`
-        et ouvert par `showPicker()` : cette méthode n'existe pas sur tous les
-        navigateurs mobiles, et le bouton « Date… » ne faisait alors strictement rien.
-        Ici c'est l'input lui-même qui reçoit le tap, donc le sélecteur natif s'ouvre
-        partout. Le libellé reste visible dessous, et `aria-label` nomme le champ —
-        il était jusqu'ici focusable et sans nom.
+        Pastille bistable, et c'est ce qui remplace la pastille × supprimée plus haut :
+        une date précise n'était annulable que par elle. Au repos, un `<input type="date">`
+        transparent est superposé au libellé — et non caché en `sr-only` puis ouvert par
+        `showPicker()`, méthode absente de plusieurs navigateurs mobiles, où le bouton
+        ne faisait alors strictement rien. Active, la pastille affiche la date et
+        redevient un simple bouton d'effacement : sans input par-dessus, l'appui ne
+        rouvre pas le sélecteur.
       */}
-      <div className="relative shrink-0 snap-start sm:hidden">
-        <span
-          aria-hidden="true"
-          className={cn(PILL_BASE, isCustomDay ? PILL_ACTIVE : PILL_IDLE)}
+      {isCustomDay ? (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          aria-pressed
+          aria-label={`Retirer le filtre du ${value?.label}`}
+          className={cn(PILL_BASE, 'shrink-0 snap-start sm:hidden', PILL_ACTIVE)}
         >
           <CalendarDays className="size-4" />
-          Date…
-        </span>
-        <input
-          type="date"
-          aria-label="Choisir une date précise"
-          onChange={handleDateInput}
-          className="absolute inset-0 size-full cursor-pointer opacity-0"
-        />
-      </div>
+          {value?.label}
+        </button>
+      ) : (
+        <div className="relative shrink-0 snap-start sm:hidden">
+          <span aria-hidden="true" className={cn(PILL_BASE, PILL_IDLE)}>
+            <CalendarDays className="size-4" />
+            Date…
+          </span>
+          <input
+            type="date"
+            aria-label="Choisir une date précise"
+            onChange={handleDateInput}
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -26,22 +26,30 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
 
       setUserId(user.id)
 
-      const { data: city } = await supabase
-        .from('cities').select('id').eq('slug', citySlug).single()
-
-      if (!city) { setState('ready'); return }
-
-      const { data: favs } = await supabase
+      // Filtrage de la ville dans la requête, via la jointure imbriquée.
+      //
+      // Avant : une requête `cities` dont le résultat n'était jamais utilisé — elle ne
+      // servait que de test d'existence — puis le téléchargement des favoris de
+      // **toutes** les villes, dont la majorité était jetée en JS. Cet onglet est
+      // devenu une destination de la barre de navigation basse, il doit être rapide.
+      const { data: favs, error } = await supabase
         .from('user_favorites')
-        .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug))')
+        .select('article:articles!inner(*, source:sources(name), category:categories(id,name,slug,icon), city:cities!inner(id,name,slug))')
         .eq('user_id', user.id)
+        .eq('article.city.slug', citySlug)
         .order('created_at', { ascending: false })
 
-      const cityFavs = ((favs ?? []) as { article: ArticleType }[])
-        .map(f => f.article)
-        .filter((a): a is ArticleType => Boolean(a) && a.city?.slug === citySlug)
+      if (error) {
+        console.error('[Favoris] chargement impossible:', error)
+        setState('ready')
+        return
+      }
 
-      setFavorites(cityFavs)
+      setFavorites(
+        ((favs ?? []) as unknown as { article: ArticleType }[])
+          .map((f) => f.article)
+          .filter((a): a is ArticleType => Boolean(a))
+      )
       setState('ready')
     }
 

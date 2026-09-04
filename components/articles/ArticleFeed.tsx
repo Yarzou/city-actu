@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ChevronDown, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
@@ -21,6 +20,11 @@ import {
   type DateRange,
   type SerializedDateRange,
 } from '@/lib/feed/date-params'
+import {
+  parseCategoryParam,
+  serializeCategoryParam,
+  toggleCategory,
+} from '@/lib/feed/category-params'
 import type { FeedArticle, Category as CategoryType } from '@/lib/types'
 import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
 
@@ -50,8 +54,15 @@ type ExternalLinkScrollSnapshot = {
   pendingExternalReturn?: boolean
 }
 
-function buildScrollContext(citySlug: string, categorySlug?: string, range?: DateRange | null, searchTerm = '') {
-  const category = categorySlug ?? 'all'
+function buildScrollContext(
+  citySlug: string,
+  categorySlugs: string[],
+  range?: DateRange | null,
+  searchTerm = ''
+) {
+  // Les slugs arrivent déjà triés (voir serializeCategoryParam) : sans ça,
+  // « sports,agenda » et « agenda,sports » produiraient deux clés pour le même feed.
+  const category = categorySlugs.length > 0 ? categorySlugs.join(',') : 'all'
   const from = range?.from ? range.from.toISOString() : 'none'
   const to = range?.to ? range.to.toISOString() : 'none'
   const search = searchTerm || 'none'
@@ -127,6 +138,8 @@ interface ArticleFeedProps {
   initialFavorites?: number[]
   initialRange?: SerializedDateRange | null
   initialSearch?: string
+  /** Slugs sélectionnés au premier rendu. Absent : lus depuis `?cat=`. */
+  initialCategories?: string[]
 }
 
 export function ArticleFeed({
@@ -137,7 +150,7 @@ export function ArticleFeed({
   hideHeader = false,
   hideMiniCalendar = false,
   hideCategoryTabs = false,
-  categories: initialCategories,
+  categories: categoryList,
   userId: initialUserId = null,
   feedContext,
   horizon,
@@ -147,11 +160,16 @@ export function ArticleFeed({
   initialFavorites,
   initialRange = null,
   initialSearch = '',
+  initialCategories,
 }: ArticleFeedProps) {
   const isHydrated = initialArticles !== null && Boolean(feedContext)
 
+  // Lu tôt : la sélection de catégories s'initialise depuis l'URL quand le serveur ne
+  // l'a pas fournie (cas d'un changement d'onglet côté client).
+  const searchParams = useSearchParams()
+
   const [articles, setArticles] = useState<FeedArticle[]>(initialArticles ?? [])
-  const [categories, setCategories] = useState<CategoryType[]>(initialCategories ?? [])
+  const [categories, setCategories] = useState<CategoryType[]>(categoryList ?? [])
   const [cityName, setCityName] = useState<string>(feedContext?.cityName ?? '')
   const [userId, setUserId] = useState<string | null>(initialUserId)
   const [favorites, setFavorites] = useState<Set<number>>(new Set(initialFavorites ?? []))
@@ -171,6 +189,12 @@ export function ArticleFeed({
   const [calendarMonth, setCalendarMonth] = useState(() => deserializeRangeBounds(initialRange)?.from ?? new Date())
   const [searchInput, setSearchInput] = useState(initialSearch)
   const [searchQuery, setSearchQuery] = useState(() => normalizeSearchText(initialSearch))
+  // Sélection cumulative de catégories. Les guinguettes ont leur propre onglet avec
+  // une catégorie fixe : dans ce mode, `hideCategoryTabs` est posé et la sélection
+  // reste vide.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(
+    () => initialCategories ?? parseCategoryParam(searchParams.get('cat') ?? undefined, categoryList ?? [])
+  )
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
@@ -196,35 +220,39 @@ export function ArticleFeed({
   const showMiniCalendar = !hideMiniCalendar && isDesktop
 
   const scrollContext = useMemo(
-    () => buildScrollContext(citySlug, categorySlug, dateRange, searchQuery),
-    [citySlug, categorySlug, dateRange, searchQuery]
+    () => buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery),
+    [citySlug, categorySlug, selectedCategories, dateRange, searchQuery]
   )
 
   // ─── Synchronisation avec l'URL ───────────────────────────────────────────────
   // Les filtres vivaient en state local : ni lien partageable, ni bouton retour, et
-  // tout était perdu au rafraîchissement. On écrit désormais `?d=` et `?q=` avec
-  // l'API History native, qui s'intègre au routeur Next sans aller-retour serveur.
-  const searchParams = useSearchParams()
+  // tout était perdu au rafraîchissement. On écrit désormais `?d=`, `?q=` et `?cat=`
+  // avec l'API History native, qui s'intègre au routeur Next sans aller-retour serveur.
   const urlDate = searchParams.get('d') ?? ''
   const urlSearch = searchParams.get('q') ?? ''
+  const urlCategories = searchParams.get('cat') ?? ''
   // Dernier état que *nous* avons appliqué. Une divergence signifie que l'URL a
   // bougé sans nous — c'est-à-dire un retour ou une avance dans l'historique.
-  const appliedUrlRef = useRef({ d: serializeDateRange(deserializeRangeBounds(initialRange)) ?? '', q: initialSearch })
+  const appliedUrlRef = useRef({
+    d: serializeDateRange(deserializeRangeBounds(initialRange)) ?? '',
+    q: initialSearch,
+    cat: serializeCategoryParam(initialCategories ?? parseCategoryParam(urlCategories, categoryList ?? [])) ?? '',
+  })
   // Dernière valeur de recherche déjà répercutée en requête. Distincte de l'état :
   // le débounce fait passer `searchQuery` par la même valeur au montage, et sans ce
   // repère le feed relançait une requête identique juste après le rendu serveur.
   const searchSyncedRef = useRef(normalizeSearchText(initialSearch))
 
   const writeUrl = useCallback(
-    (next: { d: string; q: string }, mode: 'push' | 'replace') => {
+    (next: { d: string; q: string; cat: string }, mode: 'push' | 'replace') => {
       if (typeof window === 'undefined') return
       appliedUrlRef.current = next
 
       const params = new URLSearchParams(window.location.search)
-      if (next.d) params.set('d', next.d)
-      else params.delete('d')
-      if (next.q) params.set('q', next.q)
-      else params.delete('q')
+      for (const [key, value] of [['d', next.d], ['q', next.q], ['cat', next.cat]] as const) {
+        if (value) params.set(key, value)
+        else params.delete(key)
+      }
 
       const query = params.toString()
       const url = `${window.location.pathname}${query ? `?${query}` : ''}`
@@ -234,17 +262,38 @@ export function ArticleFeed({
     []
   )
 
+  /**
+   * Slugs → identifiants, sans requête : la liste complète des catégories (avec leurs
+   * `id`) est déjà en mémoire. C'est ce qui permet à un clic de pastille de filtrer
+   * sur place, là où l'ancienne pastille-lien déclenchait une navigation de route.
+   *
+   * Passe par une ref pour que `runQuery` reste stable : en dépendance directe, il
+   * serait recréé à l'arrivée des catégories et relancerait l'observateur de scroll.
+   */
+  const categoriesRef = useRef<CategoryType[]>(categoryList ?? [])
+  useEffect(() => {
+    categoriesRef.current = categories
+  }, [categories])
+
+  const resolveCategoryIds = useCallback((slugs: string[]) => {
+    const bySlug = new Map(categoriesRef.current.map((c) => [c.slug, c.id]))
+    return slugs
+      .map((slug) => bySlug.get(slug))
+      .filter((id): id is number => typeof id === 'number')
+  }, [])
+
   const runQuery = useCallback(
     async (opts: {
       reset: boolean
       range: DateRange | null
       search: string
+      categorySlugs: string[]
       targetCount?: number
     }) => {
       const context = contextRef.current
       if (!context) return
 
-      const { reset, range, search, targetCount = PAGE_SIZE } = opts
+      const { reset, range, search, categorySlugs, targetCount = PAGE_SIZE } = opts
       const supabase = createClient()
       const currentOffset = reset ? 0 : offsetRef.current
       const limit = reset ? Math.max(PAGE_SIZE, targetCount) : PAGE_SIZE
@@ -252,8 +301,22 @@ export function ArticleFeed({
       // Un reset ouvre une nouvelle génération ; une pagination reste dans la courante.
       const generation = reset ? ++generationRef.current : generationRef.current
 
+      // Mode « catégorie unique fixe » (onglet Guinguettes) : le contexte du serveur
+      // fait foi, la sélection de pastilles n'existe pas dans ce mode.
+      let effectiveContext = context
+      if (!categorySlug) {
+        const ids = resolveCategoryIds(categorySlugs)
+        effectiveContext = {
+          ...context,
+          categoryIds: ids,
+          // Une sélection explicite rend l'exclusion des guinguettes sans objet :
+          // elles ne figurent pas dans les pastilles, donc pas dans la sélection.
+          excludeCategoryId: ids.length > 0 ? null : context.excludeCategoryId,
+        }
+      }
+
       const result = await queryArticles(supabase, {
-        context,
+        context: effectiveContext,
         range: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
         horizon: horizonRef.current,
         search,
@@ -284,7 +347,7 @@ export function ArticleFeed({
       offsetRef.current = currentOffset + result.articles.length
       setOffset(offsetRef.current)
     },
-    []
+    [categorySlug, resolveCategoryIds]
   )
 
   const fetchActiveDates = useCallback(async (month: Date) => {
@@ -322,18 +385,33 @@ export function ArticleFeed({
    * l'URL avec l'ancienne valeur de recherche capturée dans sa closure.
    */
   const applyFilters = useCallback(
-    (range: DateRange | null, searchText: string, mode: 'push' | 'replace') => {
+    (
+      range: DateRange | null,
+      searchText: string,
+      categorySlugs: string[],
+      mode: 'push' | 'replace'
+    ) => {
       const normalized = normalizeSearchText(searchText)
+      const canonicalCategories = [...new Set(categorySlugs)].sort()
 
       setDateRange(range)
       setSearchInput(searchText)
       setSearchQuery(normalized)
+      setSelectedCategories(canonicalCategories)
       searchSyncedRef.current = normalized
       setOffset(0)
-      writeUrl({ d: serializeDateRange(range) ?? '', q: searchText }, mode)
+      writeUrl(
+        {
+          d: serializeDateRange(range) ?? '',
+          q: searchText,
+          cat: serializeCategoryParam(canonicalCategories) ?? '',
+        },
+        mode
+      )
 
       setRefetching(true)
-      void runQuery({ reset: true, range, search: normalized }).finally(() => setRefetching(false))
+      void runQuery({ reset: true, range, search: normalized, categorySlugs: canonicalCategories })
+        .finally(() => setRefetching(false))
     },
     [runQuery, writeUrl]
   )
@@ -353,7 +431,7 @@ export function ArticleFeed({
 
     async function init() {
       const snapshot = readExternalScrollSnapshot()
-      const initialContext = buildScrollContext(citySlug, categorySlug, dateRange, searchQuery)
+      const initialContext = buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery)
       const hasValidExternalReturn =
         Boolean(snapshot?.pendingExternalReturn) &&
         snapshot?.context === initialContext &&
@@ -370,7 +448,7 @@ export function ArticleFeed({
         hasInitializedRef.current = true
         if (hasValidExternalReturn && requestedCount > (initialArticles?.length ?? 0)) {
           setRefetching(true)
-          await runQuery({ reset: true, range: dateRange, search: searchQuery, targetCount: requestedCount })
+          await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount })
           setRefetching(false)
         }
         if (showMiniCalendar) void fetchActiveDates(calendarMonth)
@@ -381,9 +459,9 @@ export function ArticleFeed({
       // pas préparé ce feed.
       hasInitializedRef.current = false
       const [context, { data: cats }, { data: auth }] = await Promise.all([
-        resolveFeedContext(supabase, citySlug, categorySlug, excludeCategorySlug),
-        initialCategories
-          ? Promise.resolve({ data: initialCategories })
+        resolveFeedContext(supabase, citySlug, categorySlug ? [categorySlug] : selectedCategories, excludeCategorySlug),
+        categoryList
+          ? Promise.resolve({ data: categoryList })
           : supabase.from('categories').select('*').order('display_order').order('name'),
         initialUserId !== null ? Promise.resolve({ data: { user: null } }) : supabase.auth.getUser(),
       ])
@@ -401,7 +479,7 @@ export function ArticleFeed({
       setCityName(context.cityName)
 
       await Promise.all([
-        runQuery({ reset: true, range: dateRange, search: searchQuery, targetCount: requestedCount }),
+        runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount }),
         showMiniCalendar ? fetchActiveDates(calendarMonth) : Promise.resolve(),
         resolvedUserId && !initialFavorites
           ? supabase
@@ -437,7 +515,7 @@ export function ArticleFeed({
   useEffect(() => {
     if (!hasInitializedRef.current) return
     if (searchQuery === searchSyncedRef.current) return
-    applyFilters(dateRange, searchInput, 'replace')
+    applyFilters(dateRange, searchInput, selectedCategories, 'replace')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
 
@@ -445,12 +523,21 @@ export function ArticleFeed({
   // gestionnaires, il faut adopter son état.
   useEffect(() => {
     if (!hasInitializedRef.current) return
-    if (urlDate === appliedUrlRef.current.d && urlSearch === appliedUrlRef.current.q) return
+    if (
+      urlDate === appliedUrlRef.current.d &&
+      urlSearch === appliedUrlRef.current.q &&
+      urlCategories === appliedUrlRef.current.cat
+    ) return
 
     // `replace` : l'entrée d'historique visée existe déjà, on ne fait que la rejouer.
-    applyFilters(parseDateParam(urlDate || undefined), urlSearch, 'replace')
+    applyFilters(
+      parseDateParam(urlDate || undefined),
+      urlSearch,
+      parseCategoryParam(urlCategories, categoriesRef.current),
+      'replace'
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlDate, urlSearch])
+  }, [urlDate, urlSearch, urlCategories])
 
   // ─── Restauration de scroll au retour d'un lien externe ───────────────────────
   useEffect(() => {
@@ -503,9 +590,9 @@ export function ArticleFeed({
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
-    await runQuery({ reset: false, range: dateRange, search: searchQuery })
+    await runQuery({ reset: false, range: dateRange, search: searchQuery, categorySlugs: selectedCategories })
     setLoadingMore(false)
-  }, [loadingMore, hasMore, runQuery, dateRange, searchQuery])
+  }, [loadingMore, hasMore, runQuery, dateRange, searchQuery, selectedCategories])
 
   // Scroll infini, plafonné : au-delà de AUTO_LOAD_LIMIT pages, l'utilisateur
   // reprend la main avec le bouton — sinon le pied de page devient inatteignable.
@@ -537,8 +624,8 @@ export function ArticleFeed({
   // Un changement de date est une intention explicite : `push`, pour que le retour
   // arrière défasse le filtre au lieu de quitter la page.
   const applyDateRange = useCallback(
-    (range: DateRange | null) => applyFilters(range, searchInput, 'push'),
-    [applyFilters, searchInput]
+    (range: DateRange | null) => applyFilters(range, searchInput, selectedCategories, 'push'),
+    [applyFilters, searchInput, selectedCategories]
   )
 
   function handleCalendarSelect(date: Date) {
@@ -551,13 +638,23 @@ export function ArticleFeed({
   }
 
   function resetFilters() {
-    applyFilters(null, '', 'push')
+    applyFilters(null, '', [], 'push')
+  }
+
+  // Cumulatif : chaque appui ajoute ou retire la catégorie de la sélection, sans
+  // navigation de route — la liste reste affichée, simplement atténuée.
+  function toggleCategoryFilter(slug: string) {
+    applyFilters(dateRange, searchInput, toggleCategory(selectedCategories, slug), 'push')
+  }
+
+  function clearCategoryFilter() {
+    applyFilters(dateRange, searchInput, [], 'push')
   }
 
   function retry() {
     setError(null)
     setRefetching(true)
-    void runQuery({ reset: true, range: dateRange, search: searchQuery }).finally(() =>
+    void runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories }).finally(() =>
       setRefetching(false)
     )
   }
@@ -576,7 +673,7 @@ export function ArticleFeed({
         setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)` })
         setOffset(0)
         setRefetching(true)
-        await runQuery({ reset: true, range: dateRange, search: searchQuery })
+        await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories })
         setRefetching(false)
       } else {
         setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
@@ -627,11 +724,12 @@ export function ArticleFeed({
     }
   }, [userId, canManageContent])
 
-  const currentCategory = categories.find(c => c.slug === categorySlug)
   // Mémoïsé : reparser toutes les dates du tableau à chaque render était inutile,
   // et le coût grandit avec le nombre de pages chargées.
   const grouped = useMemo(() => (dateRange ? groupByDay(articles) : null), [dateRange, articles])
-  const hasActiveFilters = Boolean(dateRange) || Boolean(searchQuery)
+  const hasActiveFilters =
+    Boolean(dateRange) || Boolean(searchQuery) || selectedCategories.length > 0
+  const selectedCategorySet = useMemo(() => new Set(selectedCategories), [selectedCategories])
 
   function renderCard(article: FeedArticle, absoluteIndex: number) {
     return (
@@ -674,21 +772,13 @@ export function ArticleFeed({
       {/* Header */}
       {!hideHeader && (
         <div className="mb-6">
-          {currentCategory && (
-            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500 mb-2">
-              <Link href="/" className="inline-link hover:text-brand-600 transition-colors">Accueil</Link>
-              <span aria-hidden="true">/</span>
-              <Link href={`/${citySlug}`} className="inline-link hover:text-brand-600 transition-colors">{cityName || citySlug}</Link>
-              <span aria-hidden="true">/</span>
-              <span className="text-gray-700">{currentCategory.name}</span>
-            </div>
-          )}
+          {/*
+            Plus de fil d'Ariane ni de titre de catégorie : une catégorie n'est plus un
+            segment de route, le feed n'a donc jamais « une » catégorie courante — il a
+            une sélection, éventuellement multiple, affichée par les pastilles.
+          */}
           <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {currentCategory
-                ? `${currentCategory.icon || '📰'} ${currentCategory.name}`
-                : cityName || citySlug}
-            </h1>
+            <h1 className="text-2xl font-bold text-gray-900">{cityName || citySlug}</h1>
             {userId && canManageContent && (
               <button
                 onClick={handleRefresh}
@@ -755,41 +845,58 @@ export function ArticleFeed({
             <DateFilter value={dateRange} onChange={applyDateRange} />
           </div>
 
-          {/* Category filter tabs */}
+          {/*
+            Filtre de catégories : cumulatif, et surtout de simples boutons.
+
+            C'étaient des `<Link>` vers `/[citySlug]/[categorySlug]` : chaque appui
+            déclenchait une navigation de segment, donc `loading.tsx`, donc une grille
+            de squelettes et une attente serveur complète — d'où l'impression de bug
+            sur un réseau mobile. Et un segment ne portant qu'une catégorie, le cumul
+            était impossible par construction.
+
+            `aria-pressed` et non `aria-current="page"` : ce ne sont plus des liens
+            mais des interrupteurs.
+          */}
           {!hideCategoryTabs && (
-            <nav
+            <div
+              role="group"
               aria-label="Filtrer par catégorie"
               className="edge-fade flex flex-nowrap snap-x snap-mandatory overflow-x-auto scrollbar-hide gap-2 mb-6 sm:flex-wrap sm:snap-none"
             >
-              <Link
-                href={`/${citySlug}`}
-                aria-current={!categorySlug ? 'page' : undefined}
+              <button
+                type="button"
+                onClick={clearCategoryFilter}
+                aria-pressed={selectedCategories.length === 0}
                 className={cn(
                   'shrink-0 snap-start min-h-11 inline-flex items-center px-4 py-2 rounded-full text-sm border transition-colors focus-ring',
-                  !categorySlug
+                  selectedCategories.length === 0
                     ? 'bg-brand-600 text-white border-brand-600'
                     : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
                 )}
               >
                 Tout
-              </Link>
-              {categories.filter((cat) => cat.slug !== excludeCategorySlug).map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/${citySlug}/${cat.slug}`}
-                  aria-current={categorySlug === cat.slug ? 'page' : undefined}
-                  className={cn(
-                    'shrink-0 snap-start min-h-11 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm border transition-colors focus-ring',
-                    categorySlug === cat.slug
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-                  )}
-                >
-                  <span aria-hidden="true">{cat.icon || '📰'}</span>
-                  {cat.name}
-                </Link>
-              ))}
-            </nav>
+              </button>
+              {categories.filter((cat) => cat.slug !== excludeCategorySlug).map((cat) => {
+                const active = selectedCategorySet.has(cat.slug)
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => toggleCategoryFilter(cat.slug)}
+                    aria-pressed={active}
+                    className={cn(
+                      'shrink-0 snap-start min-h-11 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm border transition-colors focus-ring',
+                      active
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
+                    )}
+                  >
+                    <span aria-hidden="true">{cat.icon || '📰'}</span>
+                    {cat.name}
+                  </button>
+                )
+              })}
+            </div>
           )}
 
           {/* Bandeau d'erreur quand la liste courante reste affichable (échec de
@@ -834,13 +941,18 @@ export function ArticleFeed({
               <div className="text-center py-20">
                 <p className="text-4xl mb-4" aria-hidden="true">📰</p>
                 <p className="font-medium text-gray-600">
+                  {/* L'ancien message parlait de « catégorie » quelle que soit la
+                      cause : une pastille de date ou une recherche pouvait vider le
+                      feed sans que rien ne le dise. */}
                   {searchQuery
                     ? 'Aucun article ne correspond à cette recherche'
                     : dateRange
-                      // L'ancien message parlait de « catégorie » même quand c'était
-                      // une pastille de date qui avait vidé le feed.
                       ? `Aucun article pour ${dateRange.label}`
-                      : 'Aucun article dans cette catégorie'}
+                      : selectedCategories.length > 0
+                        ? selectedCategories.length === 1
+                          ? 'Aucun article dans cette catégorie'
+                          : 'Aucun article dans ces catégories'
+                        : 'Aucun article pour le moment'}
                 </p>
                 {hasActiveFilters && (
                   <button

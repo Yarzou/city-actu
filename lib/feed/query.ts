@@ -24,7 +24,13 @@ export const FEED_SELECT =
 export interface FeedContext {
   cityId: number
   cityName: string
-  categoryId: number | null
+  /**
+   * Catégories retenues. Vide = toutes (sous réserve de `excludeCategoryId`).
+   * Un tableau et non plus un identifiant unique : la sélection est cumulative
+   * depuis que les catégories ont quitté le segment de route pour `?cat=`.
+   */
+  categoryIds: number[]
+  /** Une seule exclusion : les guinguettes, sorties du feed « Actus ». */
   excludeCategoryId: number | null
 }
 
@@ -47,37 +53,49 @@ export interface FeedQueryResult {
 }
 
 /**
- * Résout ville et catégorie en une seule vague. Retourne null si la ville n'existe
+ * Résout ville et catégories en une seule vague. Retourne null si la ville n'existe
  * pas — l'appelant en fait un `notFound()` côté serveur.
  *
- * `categorySlug` et `excludeCategorySlug` sont exclusifs : le rendu ne combine
- * jamais les deux modes, donc un seul slug est à résoudre.
+ * Les deux jeux de slugs sont résolus **ensemble**, dans une seule requête
+ * `.in('slug', …)`. `excludeCategoryId` est renseigné même quand des catégories sont
+ * sélectionnées : la sélection peut être vidée côté client (bouton « Tout ») et
+ * l'exclusion doit alors reprendre effet. Ne pas la résoudre dans ce cas laissait les
+ * guinguettes réapparaître dans le feed « Actus » après un retour à « Tout ».
+ *
+ * `queryArticles` donne la priorité à `categoryIds` : les deux ne s'appliquent jamais
+ * en même temps.
  */
 export async function resolveFeedContext(
   supabase: SupabaseClient,
   citySlug: string,
-  categorySlug?: string,
+  categorySlugs: string[] = [],
   excludeCategorySlug?: string
 ): Promise<FeedContext | null> {
-  const categorySlugToResolve = categorySlug ?? excludeCategorySlug
+  const slugsToResolve = [
+    ...new Set([...categorySlugs, ...(excludeCategorySlug ? [excludeCategorySlug] : [])]),
+  ]
 
-  const [{ data: city }, { data: category }] = await Promise.all([
+  const [{ data: city }, { data: categories }] = await Promise.all([
     supabase.from('cities').select('id,name').eq('slug', citySlug).maybeSingle(),
-    categorySlugToResolve
-      ? supabase.from('categories').select('id').eq('slug', categorySlugToResolve).maybeSingle()
-      : Promise.resolve({ data: null as { id: number } | null }),
+    slugsToResolve.length > 0
+      ? supabase.from('categories').select('id,slug').in('slug', slugsToResolve)
+      : Promise.resolve({ data: [] as { id: number; slug: string }[] }),
   ])
 
   if (!city) return null
 
   const resolved = city as { id: number; name: string }
-  const categoryId = (category as { id: number } | null)?.id ?? null
+  const bySlug = new Map(
+    ((categories ?? []) as { id: number; slug: string }[]).map((r) => [r.slug, r.id])
+  )
 
   return {
     cityId: resolved.id,
     cityName: resolved.name,
-    categoryId: categorySlug ? categoryId : null,
-    excludeCategoryId: !categorySlug && excludeCategorySlug ? categoryId : null,
+    categoryIds: categorySlugs
+      .map((slug) => bySlug.get(slug))
+      .filter((id): id is number => typeof id === 'number'),
+    excludeCategoryId: excludeCategorySlug ? (bySlug.get(excludeCategorySlug) ?? null) : null,
   }
 }
 
@@ -91,8 +109,8 @@ export async function queryArticles(
     .eq('city_id', context.cityId)
     .eq('is_duplicate', false)
 
-  if (context.categoryId !== null) {
-    query = query.eq('category_id', context.categoryId)
+  if (context.categoryIds.length > 0) {
+    query = query.in('category_id', context.categoryIds)
   } else if (context.excludeCategoryId !== null) {
     query = query.neq('category_id', context.excludeCategoryId)
   }

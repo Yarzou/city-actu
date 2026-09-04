@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, User } from 'lucide-react'
+import { Newspaper, Wine, Heart, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -20,10 +20,19 @@ const DEFAULT_CITY_SLUG = 'la-chapelle-sur-erdre'
 /** Chemins où la barre gênerait plus qu'elle n'aiderait. */
 const HIDDEN_PREFIXES = ['/auth']
 
+/**
+ * Quatre entrées, pas cinq : `/profil` est réservé à l'administration et renvoie 404
+ * aux autres, la barre ne doit pas mener à une impasse. Connexion, déconnexion et
+ * accès à l'administration vivent dans le menu hamburger, toujours présent en haut.
+ *
+ * Quatre entrées à 25% laissent ~94px chacune sur un écran de 375px : les libellés
+ * tiennent sans être tronqués.
+ */
 const ITEMS = [
   { tab: null,          label: 'Actus',       icon: Newspaper },
   { tab: 'guinguettes', label: 'Guinguettes', icon: Wine },
   { tab: 'favoris',     label: 'Favoris',     icon: Heart },
+  { tab: 'ia',          label: 'IA',          icon: Sparkles },
 ] as const
 
 export function BottomNav() {
@@ -44,7 +53,6 @@ export function BottomNav() {
   const cityRoot = `/${citySlug}`
   const onCityRoot = pathname === cityRoot
   const activeTab = onCityRoot ? searchParams.get('tab') : null
-  const onProfile = pathname.startsWith('/profil')
 
   return (
     <nav
@@ -74,19 +82,6 @@ export function BottomNav() {
             </li>
           )
         })}
-        <li className="flex-1">
-          <Link
-            href="/profil"
-            aria-current={onProfile ? 'page' : undefined}
-            className={cn(
-              'flex min-h-14 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors focus-ring',
-              onProfile ? 'text-brand-700' : 'text-gray-500'
-            )}
-          >
-            <User className="size-5" />
-            Profil
-          </Link>
-        </li>
       </ul>
     </nav>
   )

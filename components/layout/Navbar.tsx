@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { Menu, X, Newspaper, Monitor, Moon, Sun } from 'lucide-react'
+import { Menu, X, Newspaper, Monitor, Moon, Sun, LogOut, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
 import { cn } from '@/lib/utils'
@@ -22,10 +22,17 @@ const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode 
 interface NavbarProps {
   /** Résolu par le layout serveur : évite un aller-retour d'auth de plus au montage. */
   initialUser?: { id: string } | null
+  /**
+   * Résolu côté serveur lui aussi. Conditionne le lien « Administration » : depuis que
+   * /profil renvoie 404 aux non-administrateurs, le proposer à tous mènerait à une
+   * impasse — et l'entrée Profil de la barre basse a été retirée pour la même raison.
+   */
+  isAdmin?: boolean
 }
 
-export function Navbar({ initialUser = null }: NavbarProps) {
+export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [user, setUser] = useState<Pick<User, 'id'> | null>(initialUser)
   const { theme, setTheme } = useTheme()
@@ -50,6 +57,16 @@ export function Navbar({ initialUser = null }: NavbarProps) {
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [open])
+
+  // Déplacée depuis /profil, qui n'affiche plus que le panneau d'administration :
+  // sans ça, un utilisateur non-administrateur n'aurait plus aucun moyen de se
+  // déconnecter.
+  async function signOut() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/')
+    router.refresh()
+  }
 
   return (
     <>
@@ -97,9 +114,25 @@ export function Navbar({ initialUser = null }: NavbarProps) {
           <div className="hidden md:flex items-center gap-2 shrink-0">
             <ThemeSwitch theme={theme} setTheme={setTheme} />
             {user ? (
-              <Link href="/profil" className="text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors focus-ring">
-                Mon profil
-              </Link>
+              <>
+                {isAdmin && (
+                  <Link
+                    href="/profil"
+                    className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors focus-ring"
+                  >
+                    <Settings className="size-4" />
+                    Administration
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors focus-ring"
+                >
+                  <LogOut className="size-4" />
+                  Déconnexion
+                </button>
+              </>
             ) : (
               <>
                 <Link href="/auth/login" className="text-sm text-gray-600 hover:text-gray-900 transition-colors px-3 py-2 focus-ring">
@@ -158,9 +191,25 @@ export function Navbar({ initialUser = null }: NavbarProps) {
           ))}
           <div className="border-t border-gray-100 mt-2 pt-2 flex flex-col gap-1">
             {user ? (
-              <Link href="/profil" className="px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring">
-                Mon profil
-              </Link>
+              <>
+                {isAdmin && (
+                  <Link
+                    href="/profil"
+                    className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring"
+                  >
+                    <Settings className="size-4" />
+                    Administration
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-left text-gray-700 hover:bg-gray-100 font-medium focus-ring"
+                >
+                  <LogOut className="size-4" />
+                  Déconnexion
+                </button>
+              </>
             ) : (
               <>
                 <Link href="/auth/login" className="px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring">

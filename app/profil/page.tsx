@@ -1,136 +1,51 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { ArticleCard } from '@/components/articles/ArticleCard'
-import { SkeletonCard } from '@/components/articles/SkeletonCard'
+import type { Metadata } from 'next'
+import { notFound, redirect } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { LogOut, Heart, Settings } from 'lucide-react'
-// Chargé à la demande : c'est le plus gros composant du projet (~1 500 lignes), et il
-// partait dans le chunk de /profil pour tout utilisateur connecté, y compris ceux qui
-// n'ont pas l'onglet Admin et ne peuvent donc jamais l'atteindre.
+import { createClient } from '@/lib/supabase/server'
+import { isAdminUser } from '@/lib/authz'
+
+/**
+ * Page d'administration.
+ *
+ * Elle mélangeait auparavant deux onglets : « Favoris » et « Admin ». Les favoris
+ * sont devenus une destination de la barre de navigation basse (`?tab=favoris` sur la
+ * page ville) — l'onglet faisait donc doublon, et sa requête l'était aussi, dupliquée
+ * octet pour octet avec celle de `FavoritesTab`.
+ *
+ * Le garde est désormais **serveur** : un non-administrateur ne reçoit plus le
+ * panneau du tout, alors que le garde client précédent se contentait de ne pas
+ * l'afficher. La déconnexion a rejoint le menu de la barre de navigation, seul point
+ * d'accès restant pour un visiteur ordinaire.
+ */
+
+// Chargé à la demande : c'est le plus gros composant du projet (~1 500 lignes).
 const AdminSourcesPanel = dynamic(
   () => import('@/components/admin/AdminSourcesPanel').then((m) => m.AdminSourcesPanel),
   { loading: () => <div className="h-64 animate-pulse rounded-2xl bg-gray-100" /> }
 )
-import type { Article as ArticleType } from '@/lib/types'
-import { cn } from '@/lib/utils'
-import { resolveAdminStatusClient } from '@/lib/admin-client'
 
-export default function ProfilPage() {
-  const router = useRouter()
-  const [tab, setTab]             = useState<'favorites' | 'admin'>('favorites')
-  const [userId, setUserId]       = useState<string | null>(null)
-  const [email, setEmail]         = useState<string | null>(null)
-  const [isAdmin, setIsAdmin]     = useState(false)
-  const [favorites, setFavorites] = useState<ArticleType[]>([])
-  const [loading, setLoading]     = useState(true)
+export const metadata: Metadata = {
+  title: 'Administration',
+  // Rien à indexer ici, et la page renvoie 404 à presque tout le monde.
+  robots: { index: false, follow: false },
+}
 
-  useEffect(() => {
-    const supabase = createClient()
+export default async function AdminPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth/login'); return }
+  if (!user) redirect('/auth/login')
 
-      setUserId(user.id)
-      setEmail(user.email ?? null)
-
-      const admin = await resolveAdminStatusClient(supabase, user.id)
-      setIsAdmin(admin)
-
-      const { data: favs } = await supabase
-        .from('user_favorites')
-        .select('*, article:articles(*, source:sources(name), category:categories(id,name,slug,icon), city:cities(id,name,slug))')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      setFavorites((favs ?? []).map((f: { article: ArticleType }) => f.article).filter(Boolean))
-      setLoading(false)
-    }
-
-    load()
-  }, [router])
-
-  async function signOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push('/')
-    router.refresh()
-  }
-
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-        </div>
-      </div>
-    )
-  }
+  // 404 et non une redirection : la page ne doit pas révéler qu'elle existe.
+  if (!(await isAdminUser(supabase, user.id))) notFound()
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-      {/* Header profil */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Mon profil</h1>
-          {email && <p className="text-sm text-gray-500 mt-0.5">{email}</p>}
-        </div>
-        <button
-          onClick={signOut}
-          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
-        >
-          <LogOut className="size-4" />
-          <span className="hidden sm:inline">Déconnexion</span>
-        </button>
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Administration</h1>
+        <p className="mt-1 text-sm text-gray-500">{user.email}</p>
       </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {[
-          { id: 'favorites', label: 'Favoris', icon: <Heart className="size-4" />, count: favorites.length },
-          ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: <Settings className="size-4" />, count: 0 }] : []),
-        ].map(({ id, label, icon, count }) => (
-          <button
-            key={id}
-            onClick={() => {
-              setTab(id as 'favorites' | 'admin')
-            }}
-            className={cn(
-              'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-              tab === id
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            )}
-          >
-            {icon}
-            {label}
-            {count > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">{count}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      {tab === 'favorites' && (
-        favorites.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Heart className="size-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium text-gray-600">Aucun favori pour l&apos;instant</p>
-            <p className="text-sm mt-1">Cliquez sur ❤️ sur un article pour l&apos;enregistrer.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {favorites.map((article) => (
-              <ArticleCard key={article.id} article={article} userId={userId} isFavorited />
-            ))}
-          </div>
-        )
-      )}
-      {tab === 'admin' && isAdmin && <AdminSourcesPanel />}
+      <AdminSourcesPanel />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { GeistMono } from 'geist/font/mono'
 import Script from 'next/script'
 import './globals.css'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminUser } from '@/lib/authz'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { BottomNav } from '@/components/layout/BottomNav'
@@ -43,6 +44,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // la page ville et le feed.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  // Conditionne le lien « Administration » du menu : /profil renvoie 404 aux
+  // non-administrateurs, le proposer à tous mènerait à une impasse.
+  const isAdmin = user ? await isAdminUser(supabase, user.id) : false
 
   return (
     <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
@@ -55,7 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="font-sans bg-gray-50 text-gray-900 antialiased min-h-full flex flex-col">
         <ThemeProvider>
-          <Navbar initialUser={user ? { id: user.id } : null} />
+          <Navbar initialUser={user ? { id: user.id } : null} isAdmin={isAdmin} />
           {/*
             `pt-[var(--header-h)]` : le décalage suivait l'en-tête à `pt-16` en dur,
             faux de la hauteur de l'encoche en PWA standalone.
