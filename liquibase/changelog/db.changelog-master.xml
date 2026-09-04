@@ -50,4 +50,7 @@
   <!-- Localisation des articles : champ LOCATION des exports .ics -->
   <include file="liquibase/changelog/015-article-location.sql"/>
 
+  <!-- Sélecteurs fest.fr : dates lues dans les microdonnées schema.org -->
+  <include file="liquibase/changelog/016-fix-fest-fr-selectors.sql"/>
+
 </databaseChangeLog>
