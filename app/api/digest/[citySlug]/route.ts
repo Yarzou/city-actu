@@ -1,7 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { summarizeRecentArticles } from '@/lib/llm/gemini'
+import { summarizeRecentArticles, describeLlmFailure } from '@/lib/llm/groq'
 import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso } from '@/lib/week'
+
+// Sans cette ligne, la route tombait sur le `maxDuration` par défaut de Vercel, plus
+// court que l'appel au LLM sur un prompt long. Les deux autres routes de résumé
+// l'exportent déjà.
+export const maxDuration = 60
 
 interface RouteParams {
   params: Promise<{ citySlug: string }>
@@ -44,7 +49,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return Response.json({ digest: null, message: 'Aucun article cette semaine.' })
   }
 
-  const digest = await summarizeRecentArticles(
+  const result = await summarizeRecentArticles(
     articles.map((article) => ({
       title: article.title as string,
       content_preview: (article.content_preview as string | null) ?? undefined,
@@ -55,9 +60,16 @@ export async function GET(_request: Request, { params }: RouteParams) {
       todayDateLabel: getCurrentParisDateLabel(),
     }
   )
-  if (!digest) {
-    return Response.json({ error: 'Échec de la génération du résumé.' }, { status: 500 })
+  // Le message d'origine, « Échec de la génération du résumé. », ne disait rien : il
+  // couvrait aussi bien une clé absente qu'un modèle décommissionné ou une réponse
+  // tronquée. Comprendre demandait de lister les modèles de Groq à la main.
+  if (!result.ok) {
+    return Response.json(
+      { error: `Échec de la génération du résumé : ${describeLlmFailure(result.reason, result.status)}` },
+      { status: 500 }
+    )
   }
+  const digest = result.text
 
   const service = getServiceClient()
   const { data: inserted, error: insertError } = await service

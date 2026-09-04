@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
-import { summarizeArticles } from '@/lib/llm/gemini'
+import { summarizeArticles, describeLlmFailure } from '@/lib/llm/groq'
 import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
@@ -55,9 +55,15 @@ export async function POST(request: Request) {
     // Volontairement `inserted` et non `inserted + updated` : un passage qui n'a fait que
     // corriger des articles déjà connus ne doit ni appeler le LLM, ni écrire un résumé.
     let aiSummary: string | null = null
+    let summaryError: string | null = null
     if (summary.inserted > 0) {
       const allInserted = results.flatMap(r => r.insertedArticles)
-      aiSummary = await summarizeArticles(allInserted)
+      const result = await summarizeArticles(allInserted)
+      // Un résumé qui échoue ne doit pas faire échouer le rafraîchissement : l'ingestion
+      // est déjà écrite. La cause part dans `summaryError`, que le panneau peut afficher
+      // au lieu de laisser croire que le LLM n'avait rien à dire.
+      aiSummary = result.ok ? result.text : null
+      if (!result.ok) summaryError = describeLlmFailure(result.reason, result.status)
 
       if (aiSummary) {
         const service = getServiceClient()
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, summary, results, aiSummary, timestamp: new Date().toISOString() })
+    return NextResponse.json({ ok: true, summary, results, aiSummary, summaryError, timestamp: new Date().toISOString() })
   } catch (err) {
     console.error('[Admin] refresh erreur:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

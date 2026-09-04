@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { summarizeRecentArticles } from '@/lib/llm/gemini'
+import { summarizeRecentArticles, describeLlmFailure } from '@/lib/llm/groq'
 import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso } from '@/lib/week'
 import { isAdminUser } from '@/lib/authz'
 
@@ -67,17 +67,20 @@ export async function POST(request: Request) {
     published_at: (a.published_at as string | null) ?? (a.fetched_at as string | null) ?? undefined,
   }))
 
-  const aiSummary = await summarizeRecentArticles(snippets, {
+  const result = await summarizeRecentArticles(snippets, {
     cityName,
     todayDateLabel: getCurrentParisDateLabel(),
   })
 
-  if (!aiSummary) {
+  // Le message parlait de `GEMINI_API_KEY`, qui n'existe plus : le client est passé à
+  // Groq sans que ce texte suive. La cause réelle vient maintenant du client lui-même.
+  if (!result.ok) {
     return NextResponse.json(
-      { error: 'Impossible de générer le résumé. Vérifiez que GEMINI_API_KEY est configurée.' },
+      { error: `Impossible de générer le résumé : ${describeLlmFailure(result.reason, result.status)}` },
       { status: 503 }
     )
   }
+  const aiSummary = result.text
 
   // Persist to import_summaries
   await service.from('import_summaries').insert({
