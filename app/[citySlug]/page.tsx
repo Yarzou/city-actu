@@ -9,6 +9,7 @@ import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { fetchLatestDigest } from '@/lib/digest/latest'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -84,7 +85,12 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
 
   // Résolution du contexte et statut admin en parallèle : ni l'un ni l'autre ne dépend
   // du résultat de l'autre, les enchaîner ajoutait un aller-retour au chemin critique.
-  const [context, isAdmin] = await Promise.all([
+  //
+  // Le dernier résumé IA embarque dans la même vague, mais **seulement** sur son onglet :
+  // sinon on paierait sa lecture à chaque affichage du feed. Sans ça, l'onglet ne pouvait
+  // l'obtenir qu'après le clic — chunk, montage, puis un aller-retour HTTP qui rouvrait
+  // lui-même deux à trois requêtes Supabase en série.
+  const [context, isAdmin, latestDigest] = await Promise.all([
     resolveFeedContext(
       supabase,
       citySlug,
@@ -92,6 +98,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
       isSpotlight ? undefined : SPOTLIGHT_SLUG
     ),
     user ? isAdminUser(supabase, user.id) : Promise.resolve(false),
+    tab === 'ia' ? fetchLatestDigest(supabase, citySlug) : Promise.resolve(null),
   ])
 
   // Slug de ville inconnu : avant, la page affichait le slug brut en titre au-dessus
@@ -106,6 +113,12 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   // à préparer pour eux.
   const needsFeed = tab === 'actus' || isSpotlight
 
+  // `undefined` = le serveur n'a rien préparé (on n'est pas sur l'onglet, ou la lecture a
+  // échoué) et l'onglet charge lui-même ; `null` = le serveur a bien regardé, il n'y a
+  // pas encore de résumé. La distinction évite d'afficher « Chargement… » indéfiniment
+  // dans le second cas.
+  const initialDigest = latestDigest?.ok ? latestDigest.digest : undefined
+
   return (
     <CityHomePage
       citySlug={citySlug}
@@ -115,6 +128,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
       userId={user?.id ?? null}
       isAdmin={isAdmin}
       horizon={horizon}
+      initialDigest={initialDigest}
     >
       {needsFeed && (
         // Étage 2 — la liste. La coquille est déjà envoyée au navigateur pendant que

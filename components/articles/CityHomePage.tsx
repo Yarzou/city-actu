@@ -9,12 +9,38 @@ import { cn } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, pushTab, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
+import type { LatestDigest } from '@/lib/digest/latest'
 import type { Category } from '@/lib/types'
 
 // Chargés à la demande : un seul onglet est rendu à la fois, et « Actus » est celui
 // par défaut. Les trois corps d'onglet partaient jusqu'ici dans le chunk initial.
 const FavoritesTab = dynamic(() => import('./FavoritesTab').then((m) => m.FavoritesTab))
-const AIDigestTab = dynamic(() => import('./AIDigestTab').then((m) => m.AIDigestTab))
+// `loading` fourni ici et pas pour les favoris : le résumé IA est souvent servi dans le
+// HTML par la page (prop `initialDigest`), donc le seul temps d'attente restant est le
+// téléchargement du chunk — sans repli, la zone était simplement vide. Le squelette
+// reprend le conteneur et la carte d'en-tête d'`AIDigestTab`, comme celui de `FeedSlot`
+// reprend le conteneur d'`ArticleFeed` : sinon le contenu se décale au remplacement.
+const AIDigestTab = dynamic(() => import('./AIDigestTab').then((m) => m.AIDigestTab), {
+  loading: () => (
+    <div className="max-w-2xl mx-auto px-1 py-6">
+      <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-6 mb-6">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-100">
+            <Sparkles className="size-5 text-brand-700" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900">Résumé hebdomadaire IA</h2>
+            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré sur la semaine en cours (lundi à dimanche)</p>
+          </div>
+        </div>
+        <div className="h-4 w-3/4 rounded bg-gray-100" />
+      </div>
+      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+        Chargement du dernier résumé…
+      </div>
+    </div>
+  ),
+})
 
 // « Autour de la Chap' » remplace « Guinguettes » : l'onglet mis en avant porte
 // désormais la catégorie `metropole`, alimentée par fest.fr, dont les événements sont
@@ -38,6 +64,17 @@ interface CityHomePageProps {
   isAdmin: boolean
   horizon: string
   /**
+   * Dernier résumé IA, préparé par le serveur quand on arrive directement sur
+   * `?tab=ia`. `undefined` = rien de préparé (autre onglet à l'arrivée, ou lecture en
+   * échec) et l'onglet charge lui-même ; `null` = le serveur a regardé, il n'y a pas
+   * encore de résumé.
+   *
+   * Une prop et non un slot `<Suspense>` comme le feed : `children` n'est rendu que
+   * lorsque `tab === serverTab`, et le corps de l'onglet IA est un composant client — il
+   * ne peut pas être un enfant serveur.
+   */
+  initialDigest?: LatestDigest | null
+  /**
    * Le feed rendu par le serveur, derrière un `<Suspense>`. N'est affiché que pour
    * l'onglet que le serveur a rendu : après un changement d'onglet côté client, il ne
    * correspond plus à ce qui est demandé.
@@ -53,6 +90,7 @@ export function CityHomePage({
   userId,
   isAdmin,
   horizon,
+  initialDigest,
   children,
 }: CityHomePageProps) {
   const [refreshing, setRefreshing] = useState(false)
@@ -288,6 +326,7 @@ export function CityHomePage({
           isAuthenticated={isAuthenticated}
           canManageContent={isAdmin}
           canGenerate={isAdmin}
+          initialDigest={initialDigest}
         />
       )}
     </div>
