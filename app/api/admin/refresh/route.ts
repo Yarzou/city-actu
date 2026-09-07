@@ -1,20 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { fetchAllSources, fetchSourceById } from '@/lib/fetchers'
-import { summarizeArticles, describeLlmFailure } from '@/lib/llm/groq'
 import { isAdminUser } from '@/lib/authz'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-function getServiceClient() {
-  return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
-
+/**
+ * Rafraîchissement manuel des sources — **ingestion seule**.
+ *
+ * Cette route appelait `summarizeArticles` dès qu'un article était inséré : chaque
+ * scraping consommait du quota Groq et rallongeait la requête de plusieurs secondes.
+ * La génération de résumé a ses propres points d'entrée, tous deux explicites et
+ * réservés à l'administration — `/api/digest/[citySlug]` (onglet « Résumés IA ») et
+ * `/api/admin/summarize-recent` (panneau admin). Ne pas la rebrancher ici, pas plus
+ * que dans le cron.
+ */
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -27,11 +28,9 @@ export async function POST(request: Request) {
   }
 
   let sourceId: number | undefined
-  let cityId: number | undefined
   try {
     const body = await request.json().catch(() => ({}))
     if (body.sourceId) sourceId = Number(body.sourceId)
-    if (body.cityId) cityId = Number(body.cityId)
   } catch {}
 
   try {
@@ -52,31 +51,7 @@ export async function POST(request: Request) {
       { sources: 0, fetched: 0, inserted: 0, updated: 0, unchanged: 0, skipped: 0, errors: 0 }
     )
 
-    // Volontairement `inserted` et non `inserted + updated` : un passage qui n'a fait que
-    // corriger des articles déjà connus ne doit ni appeler le LLM, ni écrire un résumé.
-    let aiSummary: string | null = null
-    let summaryError: string | null = null
-    if (summary.inserted > 0) {
-      const allInserted = results.flatMap(r => r.insertedArticles)
-      const result = await summarizeArticles(allInserted)
-      // Un résumé qui échoue ne doit pas faire échouer le rafraîchissement : l'ingestion
-      // est déjà écrite. La cause part dans `summaryError`, que le panneau peut afficher
-      // au lieu de laisser croire que le LLM n'avait rien à dire.
-      aiSummary = result.ok ? result.text : null
-      if (!result.ok) summaryError = describeLlmFailure(result.reason, result.status)
-
-      if (aiSummary) {
-        const service = getServiceClient()
-        await service.from('import_summaries').insert({
-          city_id: cityId ?? null,
-          summary_text: aiSummary,
-          articles_count: summary.inserted,
-          source: 'refresh',
-        })
-      }
-    }
-
-    return NextResponse.json({ ok: true, summary, results, aiSummary, summaryError, timestamp: new Date().toISOString() })
+    return NextResponse.json({ ok: true, summary, results, timestamp: new Date().toISOString() })
   } catch (err) {
     console.error('[Admin] refresh erreur:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

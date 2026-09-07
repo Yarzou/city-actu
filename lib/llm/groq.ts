@@ -70,40 +70,6 @@ interface SummaryOptions {
 }
 
 /**
- * Résume les articles fraîchement importés. Voir `LlmResult` : l'échec porte sa cause.
- */
-export async function summarizeArticles(articles: ArticleSnippet[], options: SummaryOptions = {}): Promise<LlmResult> {
-  if (articles.length === 0) return { ok: false, reason: 'no_articles' }
-  const cityName = options.cityName ?? 'la ville concernée'
-
-  const articleList = articles
-    .slice(0, 30)
-    .map((a, i) => {
-      const preview = a.content_preview?.trim() ? ` — ${a.content_preview.slice(0, 120)}` : ''
-      return `${i + 1}. ${a.title}${preview}`
-    })
-    .join('\n')
-
-  const prompt = `Tu es un assistant éditorial pour un journal local de ${cityName} (France).
-
-Voici les ${articles.length} nouvel(s) article(s) importé(s) lors du dernier rafraîchissement des sources :
-
-${articleList}
-
-Rédige un résumé structuré, en français et ton journalistique sobre, en respectant exactement ce format HTML :
-- <h3>Résumé IA — ${cityName}</h3>
-- Un paragraphe <p> de "Vue d'ensemble" (2 à 3 phrases).
-- Une section "Points clés" sous forme de liste <ul> avec 3 à 6 éléments avec date et heure éventuellement<li>.
-
-Contraintes :
-- Retourne uniquement un fragment HTML valide (pas de Markdown, pas de blocs de code).
-- Utilise uniquement les balises suivantes : <h3>, <p>, <ul>, <li>, <strong>.
-- Ne liste pas les articles un par un : synthétise les thèmes et les informations clés.`
-
-  return callLLM(prompt)
-}
-
-/**
  * Résume les articles déjà en base sur la semaine en cours, jour par jour.
  */
 export async function summarizeRecentArticles(articles: ArticleSnippet[], options: SummaryOptions = {}): Promise<LlmResult> {

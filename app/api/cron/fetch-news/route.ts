@@ -10,9 +10,10 @@ export const maxDuration = 60
 /**
  * Ingestion quotidienne, déclenchée par le cron déclaré dans `vercel.json`.
  *
- * Ce handler ne doit JAMAIS appeler le LLM : le résumé Groq reste attaché au
- * rafraîchissement manuel de `/api/admin/refresh`, pour qu'une exécution automatique
- * ne consomme aucun quota. Ne pas y rebrancher `summarizeArticles`.
+ * Ce handler ne doit JAMAIS appeler le LLM, pour qu'une exécution automatique ne
+ * consomme aucun quota. Le rafraîchissement manuel de `/api/admin/refresh` ne l'appelle
+ * plus non plus : la génération de résumé vit uniquement dans `/api/digest/[citySlug]`
+ * et `/api/admin/summarize-recent`, toutes deux réservées à l'administration.
  */
 export async function GET(request: Request) {
   // Vercel injecte `Authorization: Bearer <CRON_SECRET>` sur ses appels de cron dès que la

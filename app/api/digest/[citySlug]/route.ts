@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { isAdminUser } from '@/lib/authz'
 import { summarizeRecentArticles, describeLlmFailure } from '@/lib/llm/groq'
 import { getCurrentParisDateLabel, getCurrentParisWeekMondayUtcIso, getCurrentParisWeekEndUtcIso } from '@/lib/week'
 
@@ -26,6 +27,14 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return Response.json({ error: 'Non autorisé' }, { status: 401 })
+  }
+  // La route la plus coûteuse de la famille : appel Groq sur 40 articles puis écriture
+  // en service-role. Elle ne vérifiait que la session, alors que
+  // `/api/admin/summarize-recent`, qui fait quasiment la même chose, exigeait déjà
+  // l'admin. La lecture (`latest`, `history`) et l'envoi par mail restent ouverts à
+  // tout compte connecté : ils ne dépensent rien.
+  if (!(await isAdminUser(supabase, user.id))) {
+    return Response.json({ error: 'Accès administrateur requis' }, { status: 403 })
   }
 
   const { data: city } = await supabase

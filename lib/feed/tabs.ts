@@ -17,6 +17,20 @@ export function isHomeTab(value: unknown): value is HomeTab {
   return typeof value === 'string' && (FEED_TABS as readonly string[]).includes(value)
 }
 
+/**
+ * L'onglet est-il proposable à ce visiteur ?
+ *
+ * « Résumés IA » n'a de sens qu'avec une session : les quatre routes `/api/digest/**`
+ * répondent 401 sans elle, l'onglet n'afficherait donc qu'un message d'erreur. Le
+ * prédicat vit ici, dans le module neutre, parce que les deux barres de navigation
+ * (desktop et basse), la page serveur et la relecture de l'URL côté client doivent
+ * tous appliquer la même règle. `FEED_TABS` reste inchangé : `ia` demeure une valeur
+ * d'URL légitime, seulement indisponible aux visiteurs anonymes.
+ */
+export function isTabAvailable(tab: HomeTab, isAuthenticated: boolean): boolean {
+  return tab !== 'ia' || isAuthenticated
+}
+
 /** Query string canonique d'un onglet — `actus` est l'absence de paramètre. */
 export function tabSearch(tab: HomeTab): string {
   return tab === 'actus' ? '' : `?tab=${tab}`

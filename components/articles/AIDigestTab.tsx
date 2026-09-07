@@ -7,7 +7,14 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface AIDigestTabProps {
   citySlug: string
+  /** Suppression d'un résumé de l'historique. */
   canManageContent?: boolean
+  /**
+   * Déclenchement d'une génération, donc d'un appel au LLM facturé.
+   * `GET /api/digest/[citySlug]` répond 403 aux non-administrateurs : c'est là qu'est
+   * la vraie garde, celle-ci ne fait que ne pas proposer un bouton condamné.
+   */
+  canGenerate?: boolean
 }
 
 interface DigestSummary {
@@ -17,7 +24,11 @@ interface DigestSummary {
   createdAt: string
 }
 
-export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabProps) {
+export function AIDigestTab({
+  citySlug,
+  canManageContent = false,
+  canGenerate = false,
+}: AIDigestTabProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [sendingEmail, setSendingEmail] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -114,6 +125,11 @@ export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabP
 
       if (res.status === 401) {
         setError('Vous devez être connecté pour générer un résumé.')
+        setStatus('error')
+        return
+      }
+      if (res.status === 403) {
+        setError('Seuls les administrateurs peuvent générer un résumé IA.')
         setStatus('error')
         return
       }
@@ -239,22 +255,26 @@ export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabP
           </div>
         </div>
         <p className="text-sm text-gray-600 leading-relaxed mb-4">
-          Notre assistant IA affiche le dernier résumé enregistré et permet de le régénérer à la demande.
+          {canGenerate
+            ? 'Notre assistant IA affiche le dernier résumé enregistré et permet de le régénérer à la demande.'
+            : 'Notre assistant IA affiche le dernier résumé enregistré. Sa génération est réservée aux administrateurs.'}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={generate}
-            disabled={status === 'loading'}
-            className={cn(
-              'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-              status === 'loading'
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-brand-600 text-white hover:bg-brand-700'
-            )}
-          >
-            <RefreshCw className={cn('size-4', status === 'loading' && 'animate-spin')} />
-            {status === 'loading' ? 'Génération en cours…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
-          </button>
+          {canGenerate && (
+            <button
+              onClick={generate}
+              disabled={status === 'loading'}
+              className={cn(
+                'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                status === 'loading'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-brand-600 text-white hover:bg-brand-700'
+              )}
+            >
+              <RefreshCw className={cn('size-4', status === 'loading' && 'animate-spin')} />
+              {status === 'loading' ? 'Génération en cours…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
+            </button>
+          )}
           {status === 'done' && digest && (
             <button
               onClick={sendByEmail}
@@ -287,6 +307,9 @@ export function AIDigestTab({ citySlug, canManageContent = false }: AIDigestTabP
       {!initialLoading && status === 'idle' && info && (
         <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
           {info}
+          {/* Sans ce complément, un lecteur non-admin voit « Aucun résumé disponible »
+              sans aucun bouton, donc sans savoir quoi en attendre. */}
+          {!canGenerate && ' Un administrateur doit le générer.'}
         </div>
       )}
 

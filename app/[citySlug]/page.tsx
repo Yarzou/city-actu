@@ -8,7 +8,7 @@ import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { GUINGUETTES_SLUG, isHomeTab, isTabAvailable, type HomeTab } from '@/lib/feed/tabs'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -53,9 +53,6 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   const { citySlug } = await props.params
   const searchParams = await props.searchParams
 
-  const tab = readTab(searchParams.tab)
-  const isGuinguettes = tab === 'guinguettes'
-
   const supabase = await createClient()
 
   // Étage 1 — la coquille. Deux requêtes courtes seulement : sans elles on ne peut ni
@@ -64,6 +61,15 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
     supabase.from('categories').select('*').order('display_order').order('name'),
     supabase.auth.getUser(),
   ])
+
+  const user = auth?.user ?? null
+
+  // L'onglet ne peut être arrêté qu'une fois la session connue : « Résumés IA » n'est
+  // pas proposé à un visiteur anonyme, et un `?tab=ia` saisi à la main doit retomber
+  // sur Actus — avec son feed complet — plutôt que d'afficher un onglet inaccessible.
+  const requestedTab = readTab(searchParams.tab)
+  const tab = isTabAvailable(requestedTab, Boolean(user)) ? requestedTab : 'actus'
+  const isGuinguettes = tab === 'guinguettes'
 
   const categoryList = (categories ?? []) as Category[]
   // Sur l'onglet Actus, les guinguettes ont leur propre onglet : elles ne doivent pas
@@ -75,8 +81,6 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   const selectedCategories = isGuinguettes
     ? []
     : parseCategoryParam(searchParams.cat, selectableCategories)
-
-  const user = auth?.user ?? null
 
   // Résolution du contexte et statut admin en parallèle : ni l'un ni l'autre ne dépend
   // du résultat de l'autre, les enchaîner ajoutait un aller-retour au chemin critique.

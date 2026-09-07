@@ -31,6 +31,7 @@ export interface FetchResult {
   /** Items sans URL, plus les insertions perdues à la course avec une autre source. */
   skipped: number
   errors: string[]
+  /** Détail des articles créés lors de ce passage. Diagnostic seulement : aucun LLM. */
   insertedArticles: InsertedArticle[]
 }
 
@@ -267,8 +268,9 @@ async function insertNew(
   }
 
   // Le RETURNING d'un DO NOTHING ne rend que les lignes réellement insérées : le compteur
-  // est exact, et insertedArticles — qui alimente le résumé Groq du rafraîchissement
-  // manuel — ne reçoit que du vraiment nouveau.
+  // est exact, et insertedArticles — le détail de ce qui vient d'apparaître, exposé dans
+  // la réponse du rafraîchissement — ne reçoit que du vraiment nouveau. Il n'alimente
+  // plus aucun appel au LLM : le rafraîchissement n'ingère que des articles.
   const insertedUrls = new Set((created ?? []).map((row) => row.url as string))
   for (const item of fresh) {
     if (insertedUrls.has(item.url)) {

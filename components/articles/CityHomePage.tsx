@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, pushTab, type HomeTab } from '@/lib/feed/tabs'
+import { GUINGUETTES_SLUG, isHomeTab, isTabAvailable, pushTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { Category } from '@/lib/types'
@@ -58,7 +58,13 @@ export function CityHomePage({
   // servir de cible aux raccourcis du manifeste PWA.
   const searchParams = useSearchParams()
   const urlTab = searchParams.get('tab')
-  const tab: HomeTab = isHomeTab(urlTab) ? urlTab : 'actus'
+  // `isTabAvailable` et non le seul `isHomeTab` : sans ça, un `?tab=ia` collé dans la
+  // barre d'adresse ou ramené par le bouton retour ferait réapparaître l'onglet IA à un
+  // visiteur anonyme, alors que la page serveur l'a déjà replié sur Actus.
+  const isAuthenticated = Boolean(userId)
+  const tab: HomeTab =
+    isHomeTab(urlTab) && isTabAvailable(urlTab, isAuthenticated) ? urlTab : 'actus'
+  const visibleTabs = TABS.filter(({ id }) => isTabAvailable(id, isAuthenticated))
 
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
@@ -222,14 +228,15 @@ export function CityHomePage({
         Onglets : desktop uniquement. Sur mobile, la barre de navigation basse fait le
         même travail, en fixe. Cette rangée était en `overflow-x-auto snap-x`, donc
         elle glissait sous le doigt au moindre appui-déplacé — toute cette mécanique
-        est retirée, quatre onglets tiennent sans déborder au-delà de 640px.
+        est retirée, quatre onglets — trois pour un visiteur anonyme, qui n'a pas
+        « Résumés IA » — tiennent sans déborder au-delà de 640px.
       */}
       <div
         role="tablist"
         aria-label="Sections"
         className="hidden sm:flex border-b border-gray-200 mb-6"
       >
-        {TABS.map(({ id, label, icon }) => (
+        {visibleTabs.map(({ id, label, icon }) => (
           <button
             key={id}
             role="tab"
@@ -269,7 +276,11 @@ export function CityHomePage({
         />
       )}
       {tab === 'favoris' && <FavoritesTab citySlug={citySlug} />}
-      {tab === 'ia' && <AIDigestTab citySlug={citySlug} canManageContent={isAdmin} />}
+      {tab === 'ia' && (
+        // Deux droits distincts, même si les deux valent `isAdmin` aujourd'hui :
+        // `canGenerate` autorise une dépense LLM, `canManageContent` une suppression.
+        <AIDigestTab citySlug={citySlug} canManageContent={isAdmin} canGenerate={isAdmin} />
+      )}
     </div>
   )
 }

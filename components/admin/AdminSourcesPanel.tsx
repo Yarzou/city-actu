@@ -479,7 +479,6 @@ export function AdminSourcesPanel() {
         setRefreshError('Vous devez être connecté pour rafraîchir les sources.')
       } else if (data.ok) {
         setRefreshResult(data.summary)
-        if (data.aiSummary) setAiSummary(data.aiSummary)
         if (Array.isArray(data.results)) {
           const byId: Record<number, FetchResultDetail> = {}
           for (const r of data.results as FetchResultDetail[]) byId[r.sourceId] = r
