@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
+import { Newspaper, MapPin, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, pushTab, type HomeTab } from '@/lib/feed/tabs'
+import { SPOTLIGHT_SLUG, pushTab, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { Category } from '@/lib/types'
@@ -16,11 +16,16 @@ import type { Category } from '@/lib/types'
 const FavoritesTab = dynamic(() => import('./FavoritesTab').then((m) => m.FavoritesTab))
 const AIDigestTab = dynamic(() => import('./AIDigestTab').then((m) => m.AIDigestTab))
 
+// « Autour de la Chap' » remplace « Guinguettes » : l'onglet mis en avant porte
+// désormais la catégorie `metropole`, alimentée par fest.fr, dont les événements sont
+// ceux des communes voisines (voir `SPOTLIGHT_SLUG`). Le libellé est plus long que les
+// autres et c'est assumé ici — il y a la place au-delà de 640px ; la barre basse, elle,
+// le raccourcit (voir `BottomNav`).
 const TABS: { id: HomeTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'actus',       label: 'Actus',       icon: <Newspaper className="size-4" /> },
-  { id: 'guinguettes', label: 'Guinguettes', icon: <Wine className="size-4" /> },
-  { id: 'favoris',     label: 'Favoris',     icon: <Heart className="size-4" /> },
-  { id: 'ia',          label: 'Résumés IA',  icon: <Sparkles className="size-4" /> },
+  { id: 'actus',     label: 'Actus',              icon: <Newspaper className="size-4" /> },
+  { id: 'metropole', label: "Autour de la Chap'", icon: <MapPin className="size-4" /> },
+  { id: 'favoris',   label: 'Favoris',            icon: <Heart className="size-4" /> },
+  { id: 'ia',        label: 'Résumés IA',         icon: <Sparkles className="size-4" /> },
 ]
 
 interface CityHomePageProps {
@@ -59,7 +64,10 @@ export function CityHomePage({
   const searchParams = useSearchParams()
   const urlTab = searchParams.get('tab')
   const isAuthenticated = Boolean(userId)
-  const tab: HomeTab = isHomeTab(urlTab) ? urlTab : 'actus'
+  // Même relecture que côté serveur, alias `?tab=guinguettes` compris : les deux
+  // doivent tomber sur le même onglet, sinon le feed rendu par le serveur ne serait pas
+  // celui que le client affiche.
+  const tab: HomeTab = toHomeTab(urlTab)
 
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
@@ -148,7 +156,7 @@ export function CityHomePage({
   const showIndicator = pullEnabled && (pull > 0 || refreshing)
 
   const isServerRenderedTab = tab === serverTab
-  const isFeedTab = tab === 'actus' || tab === 'guinguettes'
+  const isFeedTab = tab === 'actus' || tab === 'metropole'
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
@@ -259,12 +267,12 @@ export function CityHomePage({
         <ArticleFeed
           key={tab}
           citySlug={citySlug}
-          categorySlug={tab === 'guinguettes' ? GUINGUETTES_SLUG : undefined}
-          excludeCategorySlug={tab === 'guinguettes' ? undefined : GUINGUETTES_SLUG}
+          categorySlug={tab === 'metropole' ? SPOTLIGHT_SLUG : undefined}
+          excludeCategorySlug={tab === 'metropole' ? undefined : SPOTLIGHT_SLUG}
           canManageContent={isAdmin}
           hideHeader
           hideMiniCalendar
-          hideCategoryTabs={tab === 'guinguettes'}
+          hideCategoryTabs={tab === 'metropole'}
           categories={categories}
           userId={userId}
           horizon={horizon}

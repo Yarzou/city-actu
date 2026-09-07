@@ -19,9 +19,9 @@
       "url": "/la-chapelle-sur-erdre"
     },
     {
-      "name": "Guinguettes",
-      "short_name": "Guinguettes",
-      "url": "/la-chapelle-sur-erdre?tab=guinguettes"
+      "name": "Autour de la Chap'",
+      "short_name": "Autour",
+      "url": "/la-chapelle-sur-erdre?tab=metropole"
     },
     {
       "name": "Mes favoris",

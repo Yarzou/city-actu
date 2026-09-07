@@ -189,9 +189,9 @@ export function ArticleFeed({
   const [calendarMonth, setCalendarMonth] = useState(() => deserializeRangeBounds(initialRange)?.from ?? new Date())
   const [searchInput, setSearchInput] = useState(initialSearch)
   const [searchQuery, setSearchQuery] = useState(() => normalizeSearchText(initialSearch))
-  // Sélection cumulative de catégories. Les guinguettes ont leur propre onglet avec
-  // une catégorie fixe : dans ce mode, `hideCategoryTabs` est posé et la sélection
-  // reste vide.
+  // Sélection cumulative de catégories. La catégorie mise en avant a son propre onglet,
+  // à catégorie fixe : dans ce mode, `hideCategoryTabs` est posé et la sélection reste
+  // vide.
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     () => initialCategories ?? parseCategoryParam(searchParams.get('cat') ?? undefined, categoryList ?? [])
   )
@@ -301,7 +301,7 @@ export function ArticleFeed({
       // Un reset ouvre une nouvelle génération ; une pagination reste dans la courante.
       const generation = reset ? ++generationRef.current : generationRef.current
 
-      // Mode « catégorie unique fixe » (onglet Guinguettes) : le contexte du serveur
+      // Mode « catégorie unique fixe » (onglet mis en avant) : le contexte du serveur
       // fait foi, la sélection de pastilles n'existe pas dans ce mode.
       let effectiveContext = context
       if (!categorySlug) {
@@ -309,8 +309,8 @@ export function ArticleFeed({
         effectiveContext = {
           ...context,
           categoryIds: ids,
-          // Une sélection explicite rend l'exclusion des guinguettes sans objet :
-          // elles ne figurent pas dans les pastilles, donc pas dans la sélection.
+          // Une sélection explicite rend l'exclusion sans objet : la catégorie mise en
+          // avant ne figure pas dans les pastilles, donc pas dans la sélection.
           excludeCategoryId: ids.length > 0 ? null : context.excludeCategoryId,
         }
       }

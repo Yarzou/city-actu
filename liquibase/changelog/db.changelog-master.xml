@@ -53,4 +53,8 @@
   <!-- Sélecteurs fest.fr : dates lues dans les microdonnées schema.org -->
   <include file="liquibase/changelog/016-fix-fest-fr-selectors.sql"/>
 
+  <!-- Découpage des sources par catégorie : brèves de la mairie, agenda open data
+       éclaté en quatre filtres ODSQL, fest.fr assumé comme flux métropolitain -->
+  <include file="liquibase/changelog/017-categories-et-sources.sql"/>
+
 </databaseChangeLog>

@@ -7,14 +7,43 @@
  * comme un tableau. Le module doit donc être partagé et sans directive.
  */
 
-export const FEED_TABS = ['actus', 'guinguettes', 'favoris', 'ia'] as const
+export const FEED_TABS = ['actus', 'metropole', 'favoris', 'ia'] as const
 export type HomeTab = (typeof FEED_TABS)[number]
 
-/** La catégorie sortie du feed « Actus » et présentée dans son propre onglet. */
-export const GUINGUETTES_SLUG = 'guinguettes'
+/**
+ * La catégorie sortie du feed « Actus » et présentée dans son propre onglet.
+ *
+ * C'était `guinguettes`. La bascule vers `metropole` (migration 017) vient de fest.fr :
+ * le site n'a pas de page communale — `/agenda/loire-atlantique/la-chapelle-sur-erdre`
+ * répond 200 mais sert les événements des alentours — donc ses articles n'ont rien à
+ * faire dans le feed chapelain, et tout à faire dans un onglet qui les annonce comme
+ * métropolitains.
+ *
+ * Une seule catégorie peut être mise en avant : `FeedContext.excludeCategoryId` est
+ * au singulier, et c'est ce qui la retire du feed « Actus ». Les guinguettes rejoignent
+ * donc les catégories ordinaires — elles restent joignables par la pastille `?cat=`,
+ * rien n'est perdu.
+ */
+export const SPOTLIGHT_SLUG = 'metropole'
 
 export function isHomeTab(value: unknown): value is HomeTab {
   return typeof value === 'string' && (FEED_TABS as readonly string[]).includes(value)
+}
+
+/**
+ * Relit un `?tab=` en acceptant `guinguettes` comme **alias déprécié** de `metropole`.
+ *
+ * L'alias n'est pas de la politesse : le raccourci du manifeste PWA pointait sur
+ * `?tab=guinguettes`, donc les installations existantes le portent encore sur l'écran
+ * d'accueil des téléphones, et des liens ont pu être partagés. Sans l'alias, ils
+ * retomberaient silencieusement sur « Actus ».
+ *
+ * Un `?tab=` inconnu vaut « Actus » — le repli existait déjà dans les trois appelants,
+ * il est simplement centralisé ici avec l'alias.
+ */
+export function toHomeTab(value: unknown): HomeTab {
+  if (value === 'guinguettes') return 'metropole'
+  return isHomeTab(value) ? value : 'actus'
 }
 
 /**

@@ -17,8 +17,14 @@ import type { FeedArticle } from '@/lib/types'
  * migration 010), utiles au `ilike` côté serveur et jamais lues au rendu — les
  * ramener doublait presque le poids utile. La jointure `city` n'est pas lue non plus.
  */
+/*
+ * `location` a rejoint la liste avec l'onglet « Autour de la Chap' » : il présente des
+ * événements des communes voisines (fest.fr), où le lieu est l'information qui décide
+ * de l'intérêt — sans lui, rien ne distingue un concert à 3 km d'un vide-grenier à 50.
+ * La colonne existait depuis la migration 015 mais n'était lue que par l'export .ics.
+ */
 export const FEED_SELECT =
-  'id, title, content_preview, url, image_url, published_at, event_end_date, source:sources(name), category:categories(id,name,slug,icon)'
+  'id, title, content_preview, url, image_url, published_at, event_end_date, location, source:sources(name), category:categories(id,name,slug,icon)'
 
 /** Identifiants résolus une fois, réutilisés par toutes les requêtes du feed. */
 export interface FeedContext {
@@ -30,7 +36,7 @@ export interface FeedContext {
    * depuis que les catégories ont quitté le segment de route pour `?cat=`.
    */
   categoryIds: number[]
-  /** Une seule exclusion : les guinguettes, sorties du feed « Actus ». */
+  /** Une seule exclusion : la catégorie mise en avant, sortie du feed « Actus ». */
   excludeCategoryId: number | null
 }
 
@@ -59,8 +65,8 @@ export interface FeedQueryResult {
  * Les deux jeux de slugs sont résolus **ensemble**, dans une seule requête
  * `.in('slug', …)`. `excludeCategoryId` est renseigné même quand des catégories sont
  * sélectionnées : la sélection peut être vidée côté client (bouton « Tout ») et
- * l'exclusion doit alors reprendre effet. Ne pas la résoudre dans ce cas laissait les
- * guinguettes réapparaître dans le feed « Actus » après un retour à « Tout ».
+ * l'exclusion doit alors reprendre effet. Ne pas la résoudre dans ce cas laissait la
+ * catégorie mise en avant réapparaître dans le feed « Actus » après un retour à « Tout ».
  *
  * `queryArticles` donne la priorité à `categoryIds` : les deux ne s'appliquent jamais
  * en même temps.

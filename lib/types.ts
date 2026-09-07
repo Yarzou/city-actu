@@ -91,7 +91,7 @@ export interface Article {
  * (favoris, page article) continuent de fonctionner sans changement.
  */
 export type FeedArticle =
-  Pick<Article, 'id' | 'title' | 'content_preview' | 'url' | 'image_url' | 'published_at' | 'event_end_date'> & {
+  Pick<Article, 'id' | 'title' | 'content_preview' | 'url' | 'image_url' | 'published_at' | 'event_end_date' | 'location'> & {
     source?: Pick<Source, 'name'>
     category?: Pick<Category, 'id' | 'name' | 'slug' | 'icon'>
   }
@@ -145,4 +145,9 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'sports':           'bg-orange-100 text-orange-800',
   'travaux':          'bg-yellow-100 text-yellow-800',
   'guinguettes':      'bg-teal-100 text-teal-800',
+  // Catégories de la migration 017. Sans entrée ici, la pastille tombe sur le gris de
+  // repli : la colonne `categories.color` n'est pas lue (voir le commentaire ci-dessus).
+  'infos-pratiques':      'bg-blue-100 text-blue-800',
+  'nature-environnement': 'bg-emerald-100 text-emerald-800',
+  'metropole':            'bg-sky-100 text-sky-800',
 }

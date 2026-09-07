@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Newspaper, Wine, Heart, Sparkles, Settings, type LucideIcon } from 'lucide-react'
+import { Newspaper, MapPin, Heart, Sparkles, Settings, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isHomeTab, pushTab, tabSearch, type HomeTab } from '@/lib/feed/tabs'
+import { pushTab, tabSearch, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 
 /**
  * Navigation principale au pouce.
@@ -26,10 +26,15 @@ const HIDDEN_PREFIXES = ['/auth']
  * session, elle affiche le dernier résumé enregistré — et cinq pour un administrateur
  * (voir `isAdmin`). Au plus resserré, ~75px sur un écran de 375px, ce que les libellés
  * courts absorbent ; les largeurs sont en `flex-1`, rien à ajuster.
+ *
+ * D'où « Autour » et non « Autour de la Chap' », le libellé porté par la rangée
+ * desktop : à 11px, dix-huit caractères débordent de la cellule et passeraient à la
+ * ligne, ce qui casserait la hauteur commune des entrées. Même écart qu'entre « IA » et
+ * « Résumés IA ». L'onglet reste le même, seul le libellé est abrégé.
  */
 const TAB_ITEMS: { tab: HomeTab; label: string; icon: LucideIcon }[] = [
   { tab: 'actus',       label: 'Actus',       icon: Newspaper },
-  { tab: 'guinguettes', label: 'Guinguettes', icon: Wine },
+  { tab: 'metropole',   label: 'Autour',      icon: MapPin },
   { tab: 'favoris',     label: 'Favoris',     icon: Heart },
   { tab: 'ia',          label: 'IA',          icon: Sparkles },
 ]
@@ -77,13 +82,11 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
   const cityRoot = `/${citySlug}`
   const onCityRoot = pathname === cityRoot
   const urlTab = searchParams.get('tab')
-  // Même repli que la page et `CityHomePage` : un `?tab=` inconnu affiche Actus, la
-  // barre doit donc y surligner Actus et non rien du tout.
-  const activeTab: HomeTab | null = onCityRoot
-    ? isHomeTab(urlTab)
-      ? urlTab
-      : 'actus'
-    : null
+  // Même relecture que la page et `CityHomePage` : un `?tab=` inconnu affiche Actus — la
+  // barre doit donc y surligner Actus et non rien du tout — et `guinguettes` reste un
+  // alias de `metropole`, sinon le raccourci d'une PWA déjà installée ouvrirait le bon
+  // onglet sans que la barre le surligne.
+  const activeTab: HomeTab | null = onCityRoot ? toHomeTab(urlTab) : null
 
   const entries: NavEntry[] = TAB_ITEMS.map(({ tab, label, icon }) => ({
     key: label,

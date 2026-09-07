@@ -2,7 +2,7 @@
 
 import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX, MapPin } from 'lucide-react'
 import { cn, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
 import type { FeedArticle } from '@/lib/types'
@@ -122,6 +122,22 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
         <h2 className="font-semibold text-gray-900 text-base leading-snug line-clamp-2">
           {article.title}
         </h2>
+
+        {/*
+          Lieu — rendu seulement quand il est renseigné, donc sans effet sur les cartes
+          des sources qui ne le fournissent pas. Il compte surtout dans l'onglet
+          « Autour de la Chap' », où les événements viennent des communes voisines.
+
+          `title` en plus de `truncate` : la valeur est un « salle, adresse, ville »
+          construit par le fetcher open data, souvent plus large qu'une colonne de la
+          grille, et c'est la fin — la commune — qui est coupée.
+        */}
+        {article.location && (
+          <p className="flex items-center gap-1 text-xs text-gray-500" title={article.location}>
+            <MapPin className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">{article.location}</span>
+          </p>
+        )}
 
         {/* Preview */}
         {article.content_preview && (

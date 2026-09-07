@@ -8,7 +8,7 @@ import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { SPOTLIGHT_SLUG, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -21,8 +21,9 @@ function readParam(value: string | string[] | undefined): string {
 }
 
 function readTab(value: string | string[] | undefined): HomeTab {
-  const raw = readParam(value)
-  return isHomeTab(raw) ? raw : 'actus'
+  // `toHomeTab` porte le repli sur « Actus » et l'alias déprécié `?tab=guinguettes`,
+  // que les PWA déjà installées gardent dans leurs raccourcis.
+  return toHomeTab(readParam(value))
 }
 
 export async function generateMetadata(props: PageProps<'/[citySlug]'>): Promise<Metadata> {
@@ -68,16 +69,16 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   // dernier résumé enregistré même sans session (voir `lib/feed/tabs.ts`). L'onglet ne
   // dépend donc plus de la session — seul son contenu s'ajuste aux droits.
   const tab = readTab(searchParams.tab)
-  const isGuinguettes = tab === 'guinguettes'
+  const isSpotlight = tab === 'metropole'
 
   const categoryList = (categories ?? []) as Category[]
-  // Sur l'onglet Actus, les guinguettes ont leur propre onglet : elles ne doivent pas
-  // apparaître dans les pastilles, ni pouvoir être sélectionnées via l'URL.
-  const selectableCategories = isGuinguettes
+  // La catégorie mise en avant a son propre onglet : elle ne doit pas apparaître dans
+  // les pastilles du feed Actus, ni pouvoir y être sélectionnée via l'URL.
+  const selectableCategories = isSpotlight
     ? categoryList
-    : categoryList.filter((c) => c.slug !== GUINGUETTES_SLUG)
+    : categoryList.filter((c) => c.slug !== SPOTLIGHT_SLUG)
 
-  const selectedCategories = isGuinguettes
+  const selectedCategories = isSpotlight
     ? []
     : parseCategoryParam(searchParams.cat, selectableCategories)
 
@@ -87,8 +88,8 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
     resolveFeedContext(
       supabase,
       citySlug,
-      isGuinguettes ? [GUINGUETTES_SLUG] : selectedCategories,
-      isGuinguettes ? undefined : GUINGUETTES_SLUG
+      isSpotlight ? [SPOTLIGHT_SLUG] : selectedCategories,
+      isSpotlight ? undefined : SPOTLIGHT_SLUG
     ),
     user ? isAdminUser(supabase, user.id) : Promise.resolve(false),
   ])
@@ -103,7 +104,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
 
   // Les onglets Favoris et Résumés IA ont leur propre chargement : pas de slot de feed
   // à préparer pour eux.
-  const needsFeed = tab === 'actus' || isGuinguettes
+  const needsFeed = tab === 'actus' || isSpotlight
 
   return (
     <CityHomePage
@@ -131,7 +132,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
             search={search}
             rawSearch={readParam(searchParams.q)}
             selectedCategories={selectedCategories}
-            isGuinguettes={isGuinguettes}
+            isSpotlight={isSpotlight}
           />
         </Suspense>
       )}
@@ -172,7 +173,7 @@ interface FeedSlotProps {
   search: string
   rawSearch: string
   selectedCategories: string[]
-  isGuinguettes: boolean
+  isSpotlight: boolean
 }
 
 async function FeedSlot({
@@ -186,7 +187,7 @@ async function FeedSlot({
   search,
   rawSearch,
   selectedCategories,
-  isGuinguettes,
+  isSpotlight,
 }: FeedSlotProps) {
   const supabase = await createClient()
 
@@ -211,12 +212,12 @@ async function FeedSlot({
   return (
     <ArticleFeed
       citySlug={citySlug}
-      categorySlug={isGuinguettes ? GUINGUETTES_SLUG : undefined}
-      excludeCategorySlug={isGuinguettes ? undefined : GUINGUETTES_SLUG}
+      categorySlug={isSpotlight ? SPOTLIGHT_SLUG : undefined}
+      excludeCategorySlug={isSpotlight ? undefined : SPOTLIGHT_SLUG}
       canManageContent={isAdmin}
       hideHeader
       hideMiniCalendar
-      hideCategoryTabs={isGuinguettes}
+      hideCategoryTabs={isSpotlight}
       categories={categories}
       userId={userId}
       feedContext={context}
