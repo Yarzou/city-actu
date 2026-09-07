@@ -88,8 +88,21 @@ export async function POST(request: Request) {
   const aiSummary = result.text
 
   // Persist to import_summaries
+  //
+  // `city_id` est NOT NULL depuis la migration 019, et c'est cette garantie qui autorise
+  // les routes de lecture à filtrer la ville par jointure en une seule requête. Le
+  // `?? null` d'origine aurait donc échoué à l'insertion — mieux vaut le dire ici que de
+  // laisser la contrainte parler à notre place.
+  const summaryCityId = cityId ?? articles[0]?.city_id ?? null
+  if (summaryCityId === null) {
+    return NextResponse.json(
+      { error: 'Impossible de rattacher le résumé à une ville.' },
+      { status: 400 }
+    )
+  }
+
   await service.from('import_summaries').insert({
-    city_id: cityId ?? (articles[0]?.city_id ?? null),
+    city_id: summaryCityId,
     summary_text: aiSummary,
     articles_count: articles.length,
     source: 'on_demand',

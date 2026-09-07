@@ -38,7 +38,16 @@ export type LatestDigestResult =
   | { ok: false; reason: 'city-not-found' }
   | { ok: false; reason: 'error'; message: string }
 
-const SUMMARY_SELECT = 'id, summary_text, articles_count, created_at, source'
+/**
+ * `cities!inner(slug)` filtre la ville **dans la même requête** que le résumé, au lieu de
+ * la résoudre d'abord pour n'utiliser que son `id`. La jointure interne n'est correcte que
+ * parce que `city_id` est NOT NULL depuis la migration 019 : avant, elle aurait écarté les
+ * résumés hérités à `city_id IS NULL`, que la route rattrapait par une seconde requête.
+ *
+ * `!inner` et non une simple imbrication : sans lui PostgREST fait une jointure externe et
+ * le `.eq('cities.slug', …)` ne filtre plus rien.
+ */
+const SUMMARY_SELECT = 'id, summary_text, articles_count, created_at, source, cities!inner(slug)'
 
 interface SummaryRow {
   id: number
@@ -46,6 +55,8 @@ interface SummaryRow {
   articles_count: number
   created_at: string
   source: string
+  /** Ramené par la jointure de filtrage, jamais lu. */
+  cities?: unknown
 }
 
 function toLatestDigest(row: SummaryRow): LatestDigest {
@@ -73,45 +84,34 @@ export async function fetchLatestDigest(
   sessionClient: SupabaseClient,
   citySlug: string
 ): Promise<LatestDigestResult> {
-  const { data: city } = await sessionClient
-    .from('cities')
-    .select('id')
-    .eq('slug', citySlug)
-    .maybeSingle()
-
-  if (!city) return { ok: false, reason: 'city-not-found' }
-
   const service = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const { data: citySummaries, error: citySummaryError } = await service
-    .from('import_summaries')
-    .select(SUMMARY_SELECT)
-    .eq('city_id', (city as { id: number }).id)
-    .eq('source', 'on_demand')
-    .order('created_at', { ascending: false })
-    .limit(1)
+  // Les deux requêtes partent **ensemble** : un seul aller-retour de latence là où il y en
+  // avait deux à trois en série. Elles ne dépendent plus l'une de l'autre depuis que la
+  // ville est filtrée par jointure côté résumé — la première ne sert plus qu'à décider de
+  // la visibilité de la ville.
+  //
+  // Elle reste indispensable, et avec le client de **session** : le client service-role
+  // contourne la RLS, donc lui seul ne saurait pas si la ville est visible pour ce
+  // visiteur. C'est le point d'accroche du jour où `cities` portera un `published` — ne
+  // pas la supprimer sous prétexte que son résultat n'alimente plus la seconde requête.
+  const [{ data: city }, { data: summaries, error }] = await Promise.all([
+    sessionClient.from('cities').select('id').eq('slug', citySlug).maybeSingle(),
+    service
+      .from('import_summaries')
+      .select(SUMMARY_SELECT)
+      .eq('cities.slug', citySlug)
+      .eq('source', 'on_demand')
+      .order('created_at', { ascending: false })
+      .limit(1),
+  ])
 
-  if (citySummaryError) return { ok: false, reason: 'error', message: citySummaryError.message }
+  if (!city) return { ok: false, reason: 'city-not-found' }
+  if (error) return { ok: false, reason: 'error', message: error.message }
 
-  const latest = (citySummaries ?? [])[0] as SummaryRow | undefined
-  if (latest) return { ok: true, digest: toLatestDigest(latest) }
-
-  // Compatibilité : les résumés à la demande générés avant l'introduction de `city_id`
-  // portent `city_id IS NULL`. Cette seconde requête ne part que dans le cas « aucun
-  // résumé pour cette ville », elle ne pèse donc pas sur le cas courant.
-  const { data: globalSummaries, error: globalSummaryError } = await service
-    .from('import_summaries')
-    .select(SUMMARY_SELECT)
-    .is('city_id', null)
-    .eq('source', 'on_demand')
-    .order('created_at', { ascending: false })
-    .limit(1)
-
-  if (globalSummaryError) return { ok: false, reason: 'error', message: globalSummaryError.message }
-
-  const legacy = (globalSummaries ?? [])[0] as SummaryRow | undefined
-  return { ok: true, digest: legacy ? toLatestDigest(legacy) : null }
+  const latest = (summaries ?? [])[0] as SummaryRow | undefined
+  return { ok: true, digest: latest ? toLatestDigest(latest) : null }
 }

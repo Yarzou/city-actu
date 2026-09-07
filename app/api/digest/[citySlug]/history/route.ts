@@ -15,7 +15,16 @@ const MAX_LIMIT = 50
  * que seules la date et le nombre d'articles sont visibles avant dépliage. Le corps
  * d'une ligne se demande maintenant à l'unité, avec `?id=`.
  */
-const LIST_SELECT = 'id, articles_count, created_at, source'
+/**
+ * `cities!inner(slug)` filtre la ville dans la requête de la liste, ce qui évite de
+ * résoudre `cities` d'abord pour n'en tirer qu'un `id`. Correct seulement parce que
+ * `city_id` est NOT NULL depuis la migration 019 — une jointure interne aurait sinon
+ * écarté les résumés hérités à NULL, d'où la requête de repli qui existait ici.
+ *
+ * `!inner` est ce qui rend le `.eq('cities.slug', …)` filtrant : sans lui PostgREST fait
+ * une jointure externe et ne filtre plus rien.
+ */
+const LIST_SELECT = 'id, articles_count, created_at, source, cities!inner(slug)'
 const DETAIL_SELECT = 'id, summary_text, articles_count, created_at, source'
 
 function sanitizeLimit(rawLimit: string | null): number {
@@ -42,32 +51,52 @@ export async function GET(request: Request, { params }: RouteParams) {
   const { citySlug } = await params
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const searchParams = new URL(request.url).searchParams
+  const requestedId = sanitizeId(searchParams.get('id'))
+  const limit = sanitizeLimit(searchParams.get('limit'))
+
+  // La lecture part **en même temps** que `auth.getUser()`, qui est un aller-retour réseau
+  // vers le serveur Auth de Supabase : les enchaîner doublait la latence de l'ouverture de
+  // l'historique. Rien ne fuit — la requête utilise le client de session, donc la RLS
+  // d'`import_summaries` (007, `TO authenticated`) ne rend rien à un appelant anonyme, et
+  // le 401 ci-dessous jette de toute façon le résultat sans l'émettre.
+  //
+  // Deux formes de requête, jamais les deux à la fois :
+  //   * `?id=` — un résumé **avec son corps**, pour le dépliage d'une ligne. Filtré sur
+  //     l'`id` seul : la RLS de 007 ouvre le SELECT à tout utilisateur authentifié
+  //     (`USING (true)`), un filtre par ville ne protégerait donc rien de plus.
+  //   * sinon — la liste, métadonnées seules, ville filtrée par jointure.
+  const [{ data: { user } }, { data, error }] = await Promise.all([
+    supabase.auth.getUser(),
+    requestedId !== null
+      ? supabase
+          .from('import_summaries')
+          .select(DETAIL_SELECT)
+          .eq('id', requestedId)
+          .limit(1)
+      : supabase
+          .from('import_summaries')
+          .select(LIST_SELECT)
+          .eq('cities.slug', citySlug)
+          .eq('source', 'on_demand')
+          .order('created_at', { ascending: false })
+          .limit(limit),
+  ])
+
   if (!user) {
     return Response.json({ error: 'Non autorisé' }, { status: 401 })
   }
 
-  const searchParams = new URL(request.url).searchParams
-  const requestedId = sanitizeId(searchParams.get('id'))
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
-  // ─── Un seul résumé, avec son corps : le dépliage d'une ligne de l'historique ───
-  //
-  // Filtré sur l'`id` seul, sans recouper la ville. Deux raisons : la RLS de la
-  // migration 007 ouvre déjà le SELECT à **tout** utilisateur authentifié (`USING
-  // (true)`), donc y ajouter un filtre applicatif ne protégerait rien ; et les résumés
-  // hérités portent `city_id IS NULL`, un filtre par ville les rendrait justement
-  // illisibles alors que la liste les affiche. La garde utile est le 401 ci-dessus.
+  const rows = (data ?? []) as SummaryRow[]
+
   if (requestedId !== null) {
-    const { data, error } = await supabase
-      .from('import_summaries')
-      .select(DETAIL_SELECT)
-      .eq('id', requestedId)
-      .maybeSingle()
+    const row = rows[0]
+    if (!row) return Response.json({ error: 'Résumé introuvable' }, { status: 404 })
 
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    if (!data) return Response.json({ error: 'Résumé introuvable' }, { status: 404 })
-
-    const row = data as SummaryRow
     return Response.json({
       summary: {
         id: row.id,
@@ -79,55 +108,11 @@ export async function GET(request: Request, { params }: RouteParams) {
     })
   }
 
-  // ─── La liste : métadonnées seules ──────────────────────────────────────────────
-
-  const { data: city } = await supabase
-    .from('cities')
-    .select('id')
-    .eq('slug', citySlug)
-    .maybeSingle()
-
-  if (!city) {
-    return Response.json({ error: 'Ville introuvable' }, { status: 404 })
-  }
-
-  const limit = sanitizeLimit(searchParams.get('limit'))
-
-  const { data: citySummaries, error: citySummaryError } = await supabase
-    .from('import_summaries')
-    .select(LIST_SELECT)
-    .eq('city_id', (city as { id: number }).id)
-    .eq('source', 'on_demand')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-
-  if (citySummaryError) {
-    return Response.json({ error: citySummaryError.message }, { status: 500 })
-  }
-
-  let summaries = (citySummaries ?? []) as SummaryRow[]
-
-  // Compatibilité : les résumés générés avant l'introduction de `city_id` le portent à
-  // NULL. Comme dans `lib/digest/latest.ts`, cette requête ne part que si la ville n'a
-  // aucun résumé propre.
-  if (summaries.length === 0) {
-    const { data: globalSummaries, error: globalSummaryError } = await supabase
-      .from('import_summaries')
-      .select(LIST_SELECT)
-      .is('city_id', null)
-      .eq('source', 'on_demand')
-      .order('created_at', { ascending: false })
-      .limit(limit)
-
-    if (globalSummaryError) {
-      return Response.json({ error: globalSummaryError.message }, { status: 500 })
-    }
-
-    summaries = (globalSummaries ?? []) as SummaryRow[]
-  }
-
+  // Une ville inconnue rend une liste vide et non un 404 : la jointure ne distingue pas
+  // « ville absente » de « ville sans résumé », et l'onglet n'en fait rien de différent —
+  // c'est la page qui décide du `notFound()`, avec le contexte du feed.
   return Response.json({
-    summaries: summaries.map((summary) => ({
+    summaries: rows.map((summary) => ({
       id: summary.id,
       articleCount: summary.articles_count,
       createdAt: summary.created_at,

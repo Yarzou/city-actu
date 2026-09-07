@@ -61,4 +61,8 @@
        is_admin() en base, là où 004 ouvrait à tout compte authentifié -->
   <include file="liquibase/changelog/018-admin-write-rls.sql"/>
 
+  <!-- import_summaries.city_id fiable (rattachement, CASCADE, NOT NULL) : prérequis du
+       filtrage par jointure dans les routes de résumé -->
+  <include file="liquibase/changelog/019-import-summaries-city.sql"/>
+
 </databaseChangeLog>

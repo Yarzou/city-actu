@@ -47,6 +47,30 @@ interface DigestSummary {
   createdAt: string
 }
 
+interface DigestCacheEntry {
+  /** Distingue « rien en cache » de « chargé, et il n'y a pas de résumé ». */
+  latestLoaded: boolean
+  latest: LatestDigest | null
+  /** `null` = l'historique n'a jamais été déplié. */
+  summaries: DigestSummary[] | null
+  bodies: Record<number, string>
+}
+
+/**
+ * Cache par ville, **hors du composant**.
+ *
+ * `CityHomePage` monte le corps de l'onglet en `{tab === 'ia' && <AIDigestTab …>}` : un
+ * aller-retour Actus → IA → Actus → IA le démonte et le remonte, et refaisait donc tout le
+ * chargement. Un state interne ne peut rien y faire, il part avec le composant ; il faut
+ * que la mémoire survive au démontage, d'où un module.
+ *
+ * Il vit le temps de l'onglet du navigateur, ce qui est exactement la portée voulue : un
+ * rechargement de page repart du résumé rendu par le serveur, plus frais par construction.
+ * Le seul écart possible est un résumé régénéré **par quelqu'un d'autre** pendant la
+ * session ; la génération faite ici met le cache à jour elle-même.
+ */
+const digestCache = new Map<string, DigestCacheEntry>()
+
 export function AIDigestTab({
   citySlug,
   isAuthenticated = false,
@@ -54,27 +78,32 @@ export function AIDigestTab({
   canGenerate = false,
   initialDigest,
 }: AIDigestTabProps) {
-  // Le serveur a préparé quelque chose (résumé ou absence constatée) : on démarre à
-  // l'état final, sans « Chargement… » ni requête au montage.
-  const hasServerDigest = initialDigest !== undefined
+  const cached = digestCache.get(citySlug)
+
+  // On démarre à l'état final — sans « Chargement… » ni requête au montage — si le serveur
+  // a préparé quelque chose (résumé, ou absence constatée) **ou** si un montage précédent
+  // de cet onglet l'a déjà chargé. La prop du serveur gagne : elle vient d'un rendu plus
+  // récent que le cache.
+  const seeded = initialDigest !== undefined || (cached?.latestLoaded ?? false)
+  const seed = initialDigest !== undefined ? initialDigest : (cached?.latest ?? null)
 
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>(
-    initialDigest ? 'done' : 'idle'
+    seed ? 'done' : 'idle'
   )
   const [sendingEmail, setSendingEmail] = useState(false)
-  const [initialLoading, setInitialLoading] = useState(!hasServerDigest)
-  const [digest, setDigest] = useState<string | null>(initialDigest?.digest ?? null)
+  const [initialLoading, setInitialLoading] = useState(!seeded)
+  const [digest, setDigest] = useState<string | null>(seed?.digest ?? null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(
-    hasServerDigest && !initialDigest ? 'Aucun résumé à la demande disponible.' : null
+    seeded && !seed ? 'Aucun résumé à la demande disponible.' : null
   )
-  const [articleCount, setArticleCount] = useState<number | null>(initialDigest?.articleCount ?? null)
-  const [createdAt, setCreatedAt] = useState<string | null>(initialDigest?.createdAt ?? null)
+  const [articleCount, setArticleCount] = useState<number | null>(seed?.articleCount ?? null)
+  const [createdAt, setCreatedAt] = useState<string | null>(seed?.createdAt ?? null)
   // Identifie la ligne d'historique correspondant au résumé affiché : c'est ce qui permet
   // de savoir, après une suppression, s'il faut remplacer l'affichage principal.
-  const [latestId, setLatestId] = useState<number | null>(initialDigest?.id ?? null)
-  const [summaries, setSummaries] = useState<DigestSummary[]>([])
-  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [latestId, setLatestId] = useState<number | null>(seed?.id ?? null)
+  const [summaries, setSummaries] = useState<DigestSummary[]>(cached?.summaries ?? [])
+  const [historyLoaded, setHistoryLoaded] = useState(cached?.summaries != null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   // Replié par défaut, et rien n'est chargé avant le premier dépliage : un administrateur
@@ -84,10 +113,25 @@ export function AIDigestTab({
   const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null)
   const [summaryToDelete, setSummaryToDelete] = useState<DigestSummary | null>(null)
   // Corps des résumés de l'historique, chargés à l'unité au dépliage d'une ligne.
-  const [bodies, setBodies] = useState<Record<number, string>>({})
+  const [bodies, setBodies] = useState<Record<number, string>>(cached?.bodies ?? {})
   const [expandedSummaryId, setExpandedSummaryId] = useState<number | null>(null)
   const [bodyLoadingId, setBodyLoadingId] = useState<number | null>(null)
   const [bodyError, setBodyError] = useState<string | null>(null)
+
+  /**
+   * Fusionne dans l'entrée de cache de la ville. Un seul point d'écriture : les six
+   * endroits qui font évoluer l'état (chargement, dépliage, génération, suppression)
+   * doivent tous s'y refléter, sinon un remontage ressort une version périmée.
+   */
+  const remember = useCallback((patch: Partial<DigestCacheEntry>) => {
+    const current = digestCache.get(citySlug) ?? {
+      latestLoaded: false,
+      latest: null,
+      summaries: null,
+      bodies: {},
+    }
+    digestCache.set(citySlug, { ...current, ...patch })
+  }, [citySlug])
 
   const loadHistory = useCallback(async () => {
     if (!isAuthenticated) return
@@ -106,15 +150,17 @@ export function AIDigestTab({
         setSummaries([])
         return
       }
-      setSummaries(Array.isArray(data.summaries) ? data.summaries : [])
+      const rows = Array.isArray(data.summaries) ? data.summaries : []
+      setSummaries(rows)
       setHistoryLoaded(true)
+      remember({ summaries: rows })
     } catch {
       setHistoryError('Erreur réseau. Veuillez réessayer.')
       setSummaries([])
     } finally {
       setHistoryLoading(false)
     }
-  }, [citySlug, isAuthenticated])
+  }, [citySlug, isAuthenticated, remember])
 
   const loadLatest = useCallback(async () => {
     setInitialLoading(true)
@@ -137,6 +183,16 @@ export function AIDigestTab({
         setCreatedAt(data.createdAt ?? null)
         setLatestId(data.id ?? null)
         setStatus('done')
+        remember({
+          latestLoaded: true,
+          latest: {
+            id: data.id,
+            digest: data.digest,
+            articleCount: data.articleCount ?? 0,
+            source: data.source ?? 'on_demand',
+            createdAt: data.createdAt,
+          },
+        })
       } else {
         setDigest(null)
         setArticleCount(null)
@@ -144,21 +200,34 @@ export function AIDigestTab({
         setLatestId(null)
         setStatus('idle')
         setInfo(data.message ?? 'Aucun résumé à la demande disponible.')
+        remember({ latestLoaded: true, latest: null })
       }
     } catch {
       setError('Erreur réseau. Veuillez réessayer.')
       setStatus('error')
+      // Rien mis en cache : une panne réseau ne doit pas figer l'onglet sur son erreur
+      // pour le reste de la session.
     } finally {
       setInitialLoading(false)
     }
-  }, [citySlug])
+  }, [citySlug, remember])
 
   useEffect(() => {
-    // Le résumé est déjà dans le HTML : aucune requête au montage. C'est tout l'intérêt
-    // de la prop — l'historique, lui, attend son dépliage.
-    if (hasServerDigest) return
+    // Déjà dans le HTML (prop du serveur) ou déjà chargé par un montage précédent :
+    // aucune requête. C'est tout l'intérêt de la prop et du cache — l'historique, lui,
+    // attend son dépliage.
+    if (seeded) {
+      // La prop du serveur est plus fraîche que le cache : on l'y verse pour que le
+      // prochain montage en profite sans requête.
+      if (initialDigest !== undefined) remember({ latestLoaded: true, latest: initialDigest })
+      return
+    }
     queueMicrotask(() => void loadLatest())
-  }, [hasServerDigest, loadLatest])
+    // `initialDigest` est volontairement hors des dépendances : c'est une valeur figée du
+    // rendu serveur, la relire ne changerait rien et la comparaison d'objet relancerait
+    // l'effet à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeded, loadLatest, remember])
 
   /** Déplie une ligne d'historique, en chargeant son corps au premier passage. */
   const toggleSummary = useCallback(async (summaryId: number) => {
@@ -179,14 +248,18 @@ export function AIDigestTab({
         setExpandedSummaryId(null)
         return
       }
-      setBodies((prev) => ({ ...prev, [summaryId]: data.summary.digest }))
+      // Calculé hors de l'updater : un updater de `setState` doit rester pur (React peut
+      // le rejouer), et `bodies` est déjà dans les dépendances de ce callback.
+      const nextBodies = { ...bodies, [summaryId]: data.summary.digest as string }
+      setBodies(nextBodies)
+      remember({ bodies: nextBodies })
     } catch {
       setBodyError('Erreur réseau. Veuillez réessayer.')
       setExpandedSummaryId(null)
     } finally {
       setBodyLoadingId(null)
     }
-  }, [bodies, citySlug, expandedSummaryId])
+  }, [bodies, citySlug, expandedSummaryId, remember])
 
   async function generate() {
     setStatus('loading')
@@ -223,19 +296,34 @@ export function AIDigestTab({
       setCreatedAt(data.createdAt ?? null)
       setLatestId(data.id ?? null)
       setStatus('done')
+      // Le cache doit suivre la génération, sinon un aller-retour entre onglets
+      // ressortirait le résumé d'avant.
+      remember({
+        latestLoaded: true,
+        latest: {
+          id: data.id,
+          digest: data.digest,
+          articleCount: data.articleCount ?? 0,
+          source: 'on_demand',
+          createdAt: data.createdAt,
+        },
+      })
 
       // L'historique n'est mis à jour que s'il a déjà été chargé : y insérer une ligne
       // seule alors qu'il n'a jamais été ouvert afficherait « Historique (1) » avec un
       // compteur faux. Non chargé, il partira chercher la liste complète au dépliage.
       if (historyLoaded && data.id && data.createdAt && data.digest) {
-        setSummaries((prev) => [{
-          id: data.id,
-          articleCount: data.articleCount ?? 0,
-          createdAt: data.createdAt,
-        }, ...prev.filter((summary) => summary.id !== data.id)])
+        const nextSummaries = [{
+          id: data.id as number,
+          articleCount: (data.articleCount ?? 0) as number,
+          createdAt: data.createdAt as string,
+        }, ...summaries.filter((summary) => summary.id !== data.id)]
+        setSummaries(nextSummaries)
         // Le corps vient d'arriver dans la réponse : le mémoriser évite un aller-retour
         // si l'utilisateur déplie la ligne qu'il vient de générer.
-        setBodies((prev) => ({ ...prev, [data.id]: data.digest }))
+        const nextBodies = { ...bodies, [data.id]: data.digest as string }
+        setBodies(nextBodies)
+        remember({ summaries: nextSummaries, bodies: nextBodies })
       } else if (historyLoaded) {
         void loadHistory()
       }
@@ -295,13 +383,12 @@ export function AIDigestTab({
         return
       }
 
-      setSummaries((prev) => prev.filter((item) => item.id !== summary.id))
-      setBodies((prev) => {
-        if (prev[summary.id] === undefined) return prev
-        const next = { ...prev }
-        delete next[summary.id]
-        return next
-      })
+      const nextSummaries = summaries.filter((item) => item.id !== summary.id)
+      const nextBodies = { ...bodies }
+      delete nextBodies[summary.id]
+      setSummaries(nextSummaries)
+      setBodies(nextBodies)
+      remember({ summaries: nextSummaries, bodies: nextBodies })
       if (expandedSummaryId === summary.id) setExpandedSummaryId(null)
 
       // Le résumé supprimé était celui affiché en haut : on redemande le dernier au
