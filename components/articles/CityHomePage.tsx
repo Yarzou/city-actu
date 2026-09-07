@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, isTabAvailable, pushTab, type HomeTab } from '@/lib/feed/tabs'
+import { GUINGUETTES_SLUG, isHomeTab, pushTab, type HomeTab } from '@/lib/feed/tabs'
 import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { Category } from '@/lib/types'
@@ -58,13 +58,8 @@ export function CityHomePage({
   // servir de cible aux raccourcis du manifeste PWA.
   const searchParams = useSearchParams()
   const urlTab = searchParams.get('tab')
-  // `isTabAvailable` et non le seul `isHomeTab` : sans ça, un `?tab=ia` collé dans la
-  // barre d'adresse ou ramené par le bouton retour ferait réapparaître l'onglet IA à un
-  // visiteur anonyme, alors que la page serveur l'a déjà replié sur Actus.
   const isAuthenticated = Boolean(userId)
-  const tab: HomeTab =
-    isHomeTab(urlTab) && isTabAvailable(urlTab, isAuthenticated) ? urlTab : 'actus'
-  const visibleTabs = TABS.filter(({ id }) => isTabAvailable(id, isAuthenticated))
+  const tab: HomeTab = isHomeTab(urlTab) ? urlTab : 'actus'
 
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
@@ -236,7 +231,7 @@ export function CityHomePage({
         aria-label="Sections"
         className="hidden sm:flex border-b border-gray-200 mb-6"
       >
-        {visibleTabs.map(({ id, label, icon }) => (
+        {TABS.map(({ id, label, icon }) => (
           <button
             key={id}
             role="tab"
@@ -277,9 +272,15 @@ export function CityHomePage({
       )}
       {tab === 'favoris' && <FavoritesTab citySlug={citySlug} />}
       {tab === 'ia' && (
-        // Deux droits distincts, même si les deux valent `isAdmin` aujourd'hui :
-        // `canGenerate` autorise une dépense LLM, `canManageContent` une suppression.
-        <AIDigestTab citySlug={citySlug} canManageContent={isAdmin} canGenerate={isAdmin} />
+        // Trois droits distincts : `isAuthenticated` ouvre l'historique et l'envoi par
+        // mail, `canGenerate` autorise une dépense LLM, `canManageContent` une
+        // suppression. Les deux derniers valent `isAdmin` aujourd'hui.
+        <AIDigestTab
+          citySlug={citySlug}
+          isAuthenticated={isAuthenticated}
+          canManageContent={isAdmin}
+          canGenerate={isAdmin}
+        />
       )}
     </div>
   )

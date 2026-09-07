@@ -98,12 +98,11 @@ export function AdminSourcesPanel() {
     skipped: number; errors: number
   } | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const [aiSummary, setAiSummary] = useState<string | null>(null)
   const [importSummaries, setImportSummaries] = useState<ImportSummary[]>([])
   const [showSummaryHistory, setShowSummaryHistory] = useState(false)
   const [summarySourceFilter, setSummarySourceFilter] = useState<'all' | 'on_demand' | 'refresh'>('all')
   const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null)
-  const [summarizingRecent, setSummarizingRecent] = useState(false)
+  const [clearingSummaries, setClearingSummaries] = useState(false)
   const [summarizeError, setSummarizeError] = useState<string | null>(null)
   const [editingConfig, setEditingConfig] = useState<number | null>(null)
   const [editConfig, setEditConfig] = useState<ScrapingConfig>(EMPTY_SCRAPING_CONFIG)
@@ -470,7 +469,6 @@ export function AdminSourcesPanel() {
     setRefreshing(true)
     setRefreshResult(null)
     setRefreshError(null)
-    setAiSummary(null)
     setFetchResult({})
     try {
       const res = await fetch('/api/admin/refresh', { method: 'POST' })
@@ -516,32 +514,43 @@ export function AdminSourcesPanel() {
     setFetching(null)
   }
 
-  async function summarizeRecent() {
-    setSummarizingRecent(true)
-    setSummarizeError(null)
-    try {
-      const res = await fetch('/api/admin/summarize-recent', { method: 'POST' })
-      const data = await res.json()
-      if (res.status === 401) {
-        setSummarizeError('Vous devez être connecté.')
-      } else if (data.ok) {
-        setAiSummary(data.aiSummary)
-        // Prepend to local history
-        setImportSummaries(prev => [{
-          id: Date.now(),
-          city_id: null,
-          summary_text: data.aiSummary,
-          articles_count: data.articlesCount,
-          source: 'on_demand' as const,
-          created_at: new Date().toISOString(),
-        }, ...prev])
-      } else {
-        setSummarizeError(data.error ?? 'Erreur inconnue')
+  /**
+   * Purge de tout l'historique des résumés IA.
+   *
+   * Un `/api/admin/delete` **sans `id`** est un vrai DELETE, contrairement au cas des
+   * articles où il vaut masquage : rien ne recrée un résumé au prochain cron, aucune
+   * ingestion n'appelle le LLM. La purge est donc définitive, et toutes villes
+   * confondues — comme la liste affichée ici, qui n'est pas filtrée par ville.
+   */
+  async function deleteAllImportSummaries() {
+    askConfirm(
+      'Supprimer les historiques des résumés',
+      `Supprimer définitivement l'historique complet des résumés IA (${importSummaries.length} affiché(s), toutes villes confondues) ? Cette action est irréversible.`,
+      'Supprimer les historiques',
+      async () => {
+        closeConfirm()
+        setClearingSummaries(true)
+        setSummarizeError(null)
+        setAdminFeedback(null)
+        try {
+          const res = await fetch('/api/admin/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table: 'import_summaries' }),
+          })
+          const data = await res.json()
+          if (!res.ok || !data.ok) {
+            setSummarizeError(data.error ?? 'Erreur lors de la suppression des résumés')
+          } else {
+            setImportSummaries([])
+            setAdminFeedback({ ok: true, msg: 'Historique des résumés IA supprimé.' })
+          }
+        } catch {
+          setSummarizeError('Erreur réseau')
+        }
+        setClearingSummaries(false)
       }
-    } catch {
-      setSummarizeError('Erreur réseau')
-    }
-    setSummarizingRecent(false)
+    )
   }
 
   async function deleteImportSummary(id: number) {
@@ -633,14 +642,19 @@ export function AdminSourcesPanel() {
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}</span>
           </button>
+          {/* La génération vit dans l'onglet « Résumés IA » : le bouton qui était ici
+              faisait doublon. Ne reste que la purge de l'historique, qui n'a pas
+              d'équivalent ailleurs — l'onglet ne supprime qu'un résumé à la fois. */}
           <button
-            onClick={summarizeRecent}
-            disabled={summarizingRecent || refreshing}
+            onClick={deleteAllImportSummaries}
+            disabled={clearingSummaries || refreshing || importSummaries.length === 0}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors"
-            title="Résumer les 10 articles les plus récents via IA"
+            title="Supprimer tout l'historique des résumés IA"
           >
-            <Sparkles className={cn('size-4', summarizingRecent && 'animate-pulse')} />
-            <span className="hidden sm:inline">{summarizingRecent ? 'Génération…' : 'Résumé IA'}</span>
+            <Trash2 className={cn('size-4', clearingSummaries && 'animate-pulse')} />
+            <span className="hidden sm:inline">
+              {clearingSummaries ? 'Suppression…' : 'Supprimer les résumés'}
+            </span>
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -684,18 +698,7 @@ export function AdminSourcesPanel() {
             {refreshResult.unchanged ?? 0} inchangé(s)
             {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
           </span>
-          <button onClick={() => { setRefreshResult(null); setAiSummary(null) }} className="ml-4 text-green-600 hover:text-green-800">✕</button>
-        </div>
-      )}
-
-      {/* AI digest */}
-      {aiSummary && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-4 text-sm text-purple-900">
-          <p className="font-semibold text-purple-700 mb-1">✨ Synthèse IA</p>
-          <div
-            className="leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-purple-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
-            dangerouslySetInnerHTML={{ __html: formatDigestHtml(aiSummary) }}
-          />
+          <button onClick={() => setRefreshResult(null)} className="ml-4 text-green-600 hover:text-green-800">✕</button>
         </div>
       )}
 

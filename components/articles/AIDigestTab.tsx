@@ -7,6 +7,14 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface AIDigestTabProps {
   citySlug: string
+  /**
+   * Le dernier résumé est visible de tous — c'est tout l'intérêt de l'onglet pour un
+   * visiteur anonyme. Restent réservés à une session l'historique (`history` répond
+   * 401) et l'envoi par mail (il part vers l'adresse du compte) : ils ne sont pas
+   * *affichés en erreur* mais **absents**, sinon l'onglet accueillerait le visiteur
+   * par un « Vous devez être connecté » alors que le contenu, lui, est bien là.
+   */
+  isAuthenticated?: boolean
   /** Suppression d'un résumé de l'historique. */
   canManageContent?: boolean
   /**
@@ -26,6 +34,7 @@ interface DigestSummary {
 
 export function AIDigestTab({
   citySlug,
+  isAuthenticated = false,
   canManageContent = false,
   canGenerate = false,
 }: AIDigestTabProps) {
@@ -38,13 +47,15 @@ export function AIDigestTab({
   const [articleCount, setArticleCount] = useState<number | null>(null)
   const [createdAt, setCreatedAt] = useState<string | null>(null)
   const [summaries, setSummaries] = useState<DigestSummary[]>([])
-  const [historyLoading, setHistoryLoading] = useState(true)
+  // Pas de chargement affiché à un visiteur anonyme : la section n'est pas rendue.
+  const [historyLoading, setHistoryLoading] = useState(isAuthenticated)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(true)
   const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null)
   const [summaryToDelete, setSummaryToDelete] = useState<DigestSummary | null>(null)
 
   const loadHistory = useCallback(async () => {
+    if (!isAuthenticated) return
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -67,7 +78,7 @@ export function AIDigestTab({
     } finally {
       setHistoryLoading(false)
     }
-  }, [citySlug])
+  }, [citySlug, isAuthenticated])
 
   useEffect(() => {
     async function loadLatest() {
@@ -78,11 +89,7 @@ export function AIDigestTab({
         const res = await fetch(`/api/digest/${citySlug}/latest`)
         const data = await res.json()
 
-        if (res.status === 401) {
-          setError('Vous devez être connecté pour consulter les résumés IA.')
-          setStatus('error')
-          return
-        }
+        // Plus de cas 401 : `latest` est ouverte aux visiteurs anonymes.
         if (!res.ok) {
           setError(data.error ?? 'Erreur lors du chargement du dernier résumé.')
           setStatus('error')
@@ -275,7 +282,7 @@ export function AIDigestTab({
               {status === 'loading' ? 'Génération en cours…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
             </button>
           )}
-          {status === 'done' && digest && (
+          {status === 'done' && digest && isAuthenticated && (
             <button
               onClick={sendByEmail}
               disabled={sendingEmail}
@@ -338,6 +345,9 @@ export function AIDigestTab({
         </div>
       )}
 
+      {/* Historique : réservé aux connectés (`history` répond 401), et absent plutôt
+          qu'affiché en erreur. Le bloc n'est pas ré-indenté pour garder le diff lisible. */}
+      {isAuthenticated && (
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <button
           onClick={() => setHistoryOpen((open) => !open)}
@@ -401,6 +411,7 @@ export function AIDigestTab({
           </>
         )}
       </div>
+      )}
 
       <ConfirmDialog
         open={Boolean(summaryToDelete)}

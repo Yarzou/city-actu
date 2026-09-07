@@ -70,7 +70,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {children}
           </main>
           <Footer />
-          <BottomNav isAdmin={isAdmin} isAuthenticated={Boolean(user)} />
+          <BottomNav isAdmin={isAdmin} />
           <PWAInstallBanner />
         </ThemeProvider>
         <Script id="sw-register" strategy="afterInteractive">{`

@@ -18,18 +18,20 @@ export function isHomeTab(value: unknown): value is HomeTab {
 }
 
 /**
- * L'onglet est-il proposable à ce visiteur ?
+ * Le dernier résumé IA est public.
  *
- * « Résumés IA » n'a de sens qu'avec une session : les quatre routes `/api/digest/**`
- * répondent 401 sans elle, l'onglet n'afficherait donc qu'un message d'erreur. Le
- * prédicat vit ici, dans le module neutre, parce que les deux barres de navigation
- * (desktop et basse), la page serveur et la relecture de l'URL côté client doivent
- * tous appliquer la même règle. `FEED_TABS` reste inchangé : `ia` demeure une valeur
- * d'URL légitime, seulement indisponible aux visiteurs anonymes.
+ * L'onglet « Résumés IA » était réservé aux visiteurs connectés : un prédicat
+ * `isTabAvailable(tab, isAuthenticated)` le retirait des deux barres de navigation, de
+ * la page serveur et de la relecture de `?tab=`. Ce n'est plus le cas — un visiteur
+ * anonyme voit l'onglet et le dernier résumé enregistré
+ * (`GET /api/digest/[citySlug]/latest`, ouverte à tous).
+ *
+ * Restent derrière une session : l'historique et l'envoi par mail. Derrière le rôle
+ * admin : la génération (coût LLM) et la suppression. Tous les onglets étant désormais
+ * proposables à tout le monde, le prédicat n'a plus lieu d'exister — ne pas le
+ * réintroduire pour masquer un onglet : c'est le corps de l'onglet qui module ce qu'il
+ * propose, via les droits qu'il reçoit en props.
  */
-export function isTabAvailable(tab: HomeTab, isAuthenticated: boolean): boolean {
-  return tab !== 'ia' || isAuthenticated
-}
 
 /** Query string canonique d'un onglet — `actus` est l'absence de paramètre. */
 export function tabSearch(tab: HomeTab): string {

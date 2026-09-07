@@ -8,7 +8,7 @@ import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
-import { GUINGUETTES_SLUG, isHomeTab, isTabAvailable, type HomeTab } from '@/lib/feed/tabs'
+import { GUINGUETTES_SLUG, isHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -64,11 +64,10 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
 
   const user = auth?.user ?? null
 
-  // L'onglet ne peut être arrêté qu'une fois la session connue : « Résumés IA » n'est
-  // pas proposé à un visiteur anonyme, et un `?tab=ia` saisi à la main doit retomber
-  // sur Actus — avec son feed complet — plutôt que d'afficher un onglet inaccessible.
-  const requestedTab = readTab(searchParams.tab)
-  const tab = isTabAvailable(requestedTab, Boolean(user)) ? requestedTab : 'actus'
+  // Tous les onglets sont proposables à tout le monde : « Résumés IA » affiche le
+  // dernier résumé enregistré même sans session (voir `lib/feed/tabs.ts`). L'onglet ne
+  // dépend donc plus de la session — seul son contenu s'ajuste aux droits.
+  const tab = readTab(searchParams.tab)
   const isGuinguettes = tab === 'guinguettes'
 
   const categoryList = (categories ?? []) as Category[]

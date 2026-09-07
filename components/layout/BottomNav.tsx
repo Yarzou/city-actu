@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Newspaper, Wine, Heart, Sparkles, Settings, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isHomeTab, isTabAvailable, pushTab, tabSearch, type HomeTab } from '@/lib/feed/tabs'
+import { isHomeTab, pushTab, tabSearch, type HomeTab } from '@/lib/feed/tabs'
 
 /**
  * Navigation principale au pouce.
@@ -22,10 +22,10 @@ const DEFAULT_CITY_SLUG = 'la-chapelle-sur-erdre'
 const HIDDEN_PREFIXES = ['/auth']
 
 /**
- * Onglets de la page ville, filtrés par `isTabAvailable` : trois entrées pour un
- * visiteur anonyme (« IA » demande une session), quatre pour un connecté, cinq pour un
- * administrateur (voir `isAdmin`). Au plus resserré, ~75px sur un écran de 375px, ce
- * que les libellés courts absorbent ; les largeurs sont en `flex-1`, rien à ajuster.
+ * Onglets de la page ville : quatre entrées pour tout le monde — « IA » n'exige plus de
+ * session, elle affiche le dernier résumé enregistré — et cinq pour un administrateur
+ * (voir `isAdmin`). Au plus resserré, ~75px sur un écran de 375px, ce que les libellés
+ * courts absorbent ; les largeurs sont en `flex-1`, rien à ajuster.
  */
 const TAB_ITEMS: { tab: HomeTab; label: string; icon: LucideIcon }[] = [
   { tab: 'actus',       label: 'Actus',       icon: Newspaper },
@@ -42,12 +42,6 @@ interface BottomNavProps {
    * été retirée du menu hamburger — les deux points d'entrée faisaient doublon.
    */
   isAdmin?: boolean
-  /**
-   * Résolu côté serveur dans le layout racine, comme `isAdmin`. Conditionne l'entrée
-   * « IA » : les routes `/api/digest/**` répondent 401 sans session, la barre ne doit
-   * pas mener à un onglet qui ne sait afficher qu'un message d'erreur.
-   */
-  isAuthenticated?: boolean
 }
 
 interface NavEntry {
@@ -65,7 +59,7 @@ interface NavEntry {
   tab?: HomeTab
 }
 
-export function BottomNav({ isAdmin = false, isAuthenticated = false }: BottomNavProps) {
+export function BottomNav({ isAdmin = false }: BottomNavProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -83,17 +77,15 @@ export function BottomNav({ isAdmin = false, isAuthenticated = false }: BottomNa
   const cityRoot = `/${citySlug}`
   const onCityRoot = pathname === cityRoot
   const urlTab = searchParams.get('tab')
-  // Même repli que la page et `CityHomePage` : sur un `?tab=ia` anonyme, la page affiche
-  // Actus, la barre doit donc y surligner Actus et non rien du tout.
+  // Même repli que la page et `CityHomePage` : un `?tab=` inconnu affiche Actus, la
+  // barre doit donc y surligner Actus et non rien du tout.
   const activeTab: HomeTab | null = onCityRoot
-    ? isHomeTab(urlTab) && isTabAvailable(urlTab, isAuthenticated)
+    ? isHomeTab(urlTab)
       ? urlTab
       : 'actus'
     : null
 
-  const entries: NavEntry[] = TAB_ITEMS.filter(({ tab }) =>
-    isTabAvailable(tab, isAuthenticated)
-  ).map(({ tab, label, icon }) => ({
+  const entries: NavEntry[] = TAB_ITEMS.map(({ tab, label, icon }) => ({
     key: label,
     href: `${cityRoot}${tabSearch(tab)}`,
     label,
