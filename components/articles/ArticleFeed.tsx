@@ -11,6 +11,7 @@ import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { queryArticles, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
+import { fetchLastFetchAt } from '@/lib/feed/last-update'
 import { parisHorizonISO, buildCivilFromDate, formatParisDateTime } from '@/lib/feed/paris-time'
 import {
   deserializeRangeBounds,
@@ -494,6 +495,12 @@ export function ArticleFeed({
       await Promise.all([
         runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount }),
         showMiniCalendar ? fetchActiveDates(calendarMonth) : Promise.resolve(),
+        // La date de dernière collecte est une propriété de la **ville**, pas du feed :
+        // elle doit s'afficher sur « Autour de la Chap' » comme sur « Actus ». Le
+        // serveur ne la prépare que pour l'onglet qu'il rend (prop `lastFetchAt`) ;
+        // sur un onglet atteint côté client, le feed la lit lui-même — une requête
+        // d'une ligne sur `sources`, en lecture publique, lancée avec le reste.
+        fetchLastFetchAt(supabase, context.cityId).then(setLastFetch),
         resolvedUserId && !initialFavorites
           ? supabase
               .from('user_favorites')

@@ -1,14 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, MapPin, Heart, Sparkles, RefreshCw, XCircle } from 'lucide-react'
+import { Newspaper, MapPin, Heart, Sparkles, RefreshCw } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, pushTab, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
-import { usePullToRefresh } from '@/lib/hooks/use-pull-to-refresh'
-import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import type { LatestDigest } from '@/lib/digest/latest'
 import type { Category } from '@/lib/types'
 
@@ -110,49 +108,11 @@ export function CityHomePage({
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
 
-  // ─── Interruption d'un rafraîchissement en cours ─────────────────────────────
-  // La collecte dure 15 à 40 s (toutes les sources de la ville). Le geste de tirage
-  // partant au moindre appui-déplacé en haut de page, il faut pouvoir en sortir.
-  //
-  // Une ref et non du state : rien ne s'affiche à partir du contrôleur lui-même.
-  const abortRef = useRef<AbortController | null>(null)
-
-  // Annulation en deux temps : le premier appui arme, le second confirme. Un seul
-  // appui suffirait, mais le pouce passe souvent près du haut de l'écran et une
-  // collecte annulée par mégarde est plus coûteuse qu'un appui de plus.
-  const [cancelArmed, setCancelArmed] = useState(false)
-  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const disarmCancel = useCallback(() => {
-    if (cancelTimerRef.current) {
-      clearTimeout(cancelTimerRef.current)
-      cancelTimerRef.current = null
-    }
-    setCancelArmed(false)
-  }, [])
-
-  // Le timer est piloté par un événement, pas par un rendu : il vit dans une ref et
-  // non dans un effet. Seul le nettoyage au démontage en est un.
-  useEffect(() => () => {
-    if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
-  }, [])
-
-  function armCancel() {
-    setCancelArmed(true)
-    if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
-    cancelTimerRef.current = setTimeout(() => {
-      cancelTimerRef.current = null
-      setCancelArmed(false)
-    }, 3000)
-  }
-
   async function handleRefresh() {
-    const controller = new AbortController()
-    abortRef.current = controller
     setRefreshing(true)
     setRefreshFeedback(null)
     try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST', signal: controller.signal })
+      const res = await fetch('/api/admin/refresh', { method: 'POST' })
       const data = await res.json()
       if (res.status === 401) {
         setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
@@ -164,81 +124,21 @@ export function CityHomePage({
         setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
       }
     } catch {
-      // `abort()` ne coupe que l'attente côté client : la route continue sa collecte
-      // et insérera ses articles. Le dire, sinon on croit que rien n'a été fait et on
-      // relance pour rien.
-      setRefreshFeedback(
-        controller.signal.aborted
-          ? { ok: false, msg: 'Rafraîchissement interrompu — la collecte déjà lancée se termine côté serveur.' }
-          : { ok: false, msg: 'Erreur réseau' }
-      )
+      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
     }
-    abortRef.current = null
-    // Sans ça, le rafraîchissement suivant repartirait déjà armé sur la croix.
-    disarmCancel()
     setRefreshing(false)
     setTimeout(() => setRefreshFeedback(null), 5000)
   }
 
-  // Sur mobile, le geste remplace le bouton : même action, même condition d'accès.
-  // Il n'est armé que pour qui peut réellement rafraîchir, sinon on neutraliserait le
-  // tirer-pour-rafraîchir natif du navigateur sans rien mettre à la place.
-  const isDesktop = useIsDesktop()
+  // Le rafraîchissement manuel est réservé à l'administration : c'est la seule action
+  // du panneau accessible depuis le feed.
   const canRefresh = Boolean(userId && isAdmin)
-  const pullEnabled = canRefresh && !isDesktop
-  const { pull, armed } = usePullToRefresh({ onRefresh: handleRefresh, enabled: pullEnabled })
-
-  // Pendant le rafraîchissement le doigt est relâché, donc `pull` est retombé à zéro :
-  // l'indicateur resterait collé sous l'en-tête. On le maintient à hauteur de seuil.
-  const indicatorTravel = refreshing ? 64 : pull
-  const showIndicator = pullEnabled && (pull > 0 || refreshing)
 
   const isServerRenderedTab = tab === serverTab
   const isFeedTab = tab === 'actus' || tab === 'metropole'
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
-      {showIndicator && (
-        <div
-          // Décoratif pendant le tirage, annonçable dès qu'il porte une action. Le
-          // conteneur reste `pointer-events-none` — il couvre toute la largeur et
-          // avalerait le geste de tirage ; seul le bouton reprend le pointeur.
-          aria-hidden={!refreshing}
-          className="pointer-events-none fixed inset-x-0 z-40 flex justify-center transition-[top] duration-150"
-          style={{ top: `calc(var(--header-h) + ${indicatorTravel}px - 2.75rem)` }}
-        >
-          {refreshing ? (
-            <button
-              type="button"
-              onClick={() => (cancelArmed ? abortRef.current?.abort() : armCancel())}
-              onBlur={disarmCancel}
-              aria-label={cancelArmed ? "Confirmer l'interruption" : 'Interrompre le rafraîchissement'}
-              className={cn(
-                'pointer-events-auto flex size-11 items-center justify-center rounded-full border bg-white shadow-md transition-colors focus-ring',
-                // La bordure double le changement d'icône : l'état armé doit se lire
-                // même à l'instant où le doigt masque le centre du bouton.
-                cancelArmed ? 'border-red-300' : 'border-gray-200'
-              )}
-            >
-              {cancelArmed ? (
-                <XCircle className="size-5 text-red-600" />
-              ) : (
-                <RefreshCw className="size-5 animate-spin text-brand-600" />
-              )}
-            </button>
-          ) : (
-            <span className="flex size-11 items-center justify-center rounded-full border border-gray-200 bg-white shadow-md">
-              <RefreshCw
-                className="size-5 text-brand-600"
-                // Tant que le doigt tire, l'icône suit le geste plutôt que de tourner
-                // toute seule : c'est ce qui rend le franchissement du seuil lisible.
-                style={{ transform: `rotate(${pull * 3}deg)`, opacity: armed ? 1 : 0.5 }}
-              />
-            </span>
-          )}
-        </div>
-      )}
-
       {/*
         City header. Le titre passe en `sr-only` sur mobile : il est repris dans la
         barre haute, à côté de « Ville Actu ». `sr-only` et non `hidden` pour que la
@@ -252,7 +152,7 @@ export function CityHomePage({
             onClick={handleRefresh}
             disabled={refreshing}
             aria-label="Rafraîchir les sources"
-            className="hidden min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring sm:inline-flex"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring"
           >
             <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             <span>{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
