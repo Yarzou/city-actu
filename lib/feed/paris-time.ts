@@ -130,3 +130,40 @@ export function parisHorizonISO(at: Date = new Date()): string {
 export function buildCivilFromDate(date: Date): CivilDate {
   return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() }
 }
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: false,
+})
+
+/**
+ * « 17/09/2026 à 9h00 », toujours en heure de Paris.
+ *
+ * Formaté ici et non avec `toLocaleString()` sans fuseau : la chaîne est produite
+ * côté serveur (Vercel, UTC) puis réaffichée telle quelle après un rafraîchissement
+ * côté client (navigateur, fuseau de la machine). Sans `timeZone` figé, les deux ne
+ * donneraient pas la même heure et l'affichage sauterait à l'hydratation — le même
+ * piège que les bornes de journée de ce module.
+ */
+export function formatParisDateTime(iso: string): string | null {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+
+  const parts = new Map(DATE_TIME_FORMATTER.formatToParts(at).map((p) => [p.type, p.value]))
+  const day = parts.get('day')
+  const month = parts.get('month')
+  const year = parts.get('year')
+  const hour = parts.get('hour')
+  const minute = parts.get('minute')
+  if (!day || !month || !year || !hour || !minute) return null
+
+  // `hour: 'numeric'` rend « 09 » dans certains runtimes et « 9 » dans d'autres :
+  // on retire le zéro de tête nous-mêmes pour que la sortie ne dépende pas de l'ICU
+  // du serveur ni de celui du navigateur.
+  return `${day}/${month}/${year} à ${hour.replace(/^0/, '')}h${minute}`
+}

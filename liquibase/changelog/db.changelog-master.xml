@@ -65,4 +65,8 @@
        filtrage par jointure dans les routes de résumé -->
   <include file="liquibase/changelog/019-import-summaries-city.sql"/>
 
+  <!-- Deux pages communales fest.fr de plus dans « Autour de chez nous » :
+       Ancenis-Saint-Géréon et Angers -->
+  <include file="liquibase/changelog/020-fest-fr-ancenis-angers.sql"/>
+
 </databaseChangeLog>

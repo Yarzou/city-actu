@@ -11,7 +11,7 @@ import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { queryArticles, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
-import { parisHorizonISO, buildCivilFromDate } from '@/lib/feed/paris-time'
+import { parisHorizonISO, buildCivilFromDate, formatParisDateTime } from '@/lib/feed/paris-time'
 import {
   deserializeRangeBounds,
   parseDateParam,
@@ -140,6 +140,8 @@ interface ArticleFeedProps {
   initialSearch?: string
   /** Slugs sélectionnés au premier rendu. Absent : lus depuis `?cat=`. */
   initialCategories?: string[]
+  /** Dernière collecte des sources (ISO), affichée au-dessus de la recherche. */
+  lastFetchAt?: string | null
 }
 
 export function ArticleFeed({
@@ -161,6 +163,7 @@ export function ArticleFeed({
   initialRange = null,
   initialSearch = '',
   initialCategories,
+  lastFetchAt = null,
 }: ArticleFeedProps) {
   const isHydrated = initialArticles !== null && Boolean(feedContext)
 
@@ -198,6 +201,9 @@ export function ArticleFeed({
   const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
+  // En état et non en simple prop : un rafraîchissement manuel relit les sources sans
+  // repasser par le serveur, la date affichée doit suivre le geste.
+  const [lastFetch, setLastFetch] = useState<string | null>(lastFetchAt)
 
   const hasInitializedRef = useRef(isHydrated)
   const contextRef = useRef<FeedContext | null>(feedContext ?? null)
@@ -222,6 +228,13 @@ export function ArticleFeed({
   const scrollContext = useMemo(
     () => buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery),
     [citySlug, categorySlug, selectedCategories, dateRange, searchQuery]
+  )
+
+  // Formaté en Europe/Paris (voir formatParisDateTime) : la chaîne est produite côté
+  // serveur puis réutilisée telle quelle, elle ne doit pas dépendre du fuseau du client.
+  const lastFetchLabel = useMemo(
+    () => (lastFetch ? formatParisDateTime(lastFetch) : null),
+    [lastFetch]
   )
 
   // ─── Synchronisation avec l'URL ───────────────────────────────────────────────
@@ -671,6 +684,7 @@ export function ArticleFeed({
       } else if (data.ok) {
         const s = data.summary
         setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)` })
+        setLastFetch(new Date().toISOString())
         setOffset(0)
         setRefetching(true)
         await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories })
@@ -818,6 +832,9 @@ export function ArticleFeed({
         {/* Right: filters + feed */}
         <div className="flex-1 min-w-0">
           <div className="mb-4">
+            {lastFetchLabel && (
+              <p className="mb-2 text-xs text-gray-500">Mis à jour le {lastFetchLabel}</p>
+            )}
             <div className="relative mb-3">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
               <input

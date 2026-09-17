@@ -10,6 +10,7 @@ import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { fetchLatestDigest } from '@/lib/digest/latest'
+import { fetchLastFetchAt } from '@/lib/feed/last-update'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
 import { SkeletonCard } from '@/components/articles/SkeletonCard'
@@ -205,7 +206,7 @@ async function FeedSlot({
 }: FeedSlotProps) {
   const supabase = await createClient()
 
-  const [feed, favorites] = await Promise.all([
+  const [feed, favorites, lastFetchAt] = await Promise.all([
     queryArticles(supabase, {
       context,
       range: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
@@ -221,6 +222,7 @@ async function FeedSlot({
           .eq('user_id', userId)
           .then(({ data }) => (data ?? []).map((f: { article_id: number }) => f.article_id))
       : Promise.resolve([] as number[]),
+    fetchLastFetchAt(supabase, context.cityId),
   ])
 
   return (
@@ -243,6 +245,7 @@ async function FeedSlot({
       initialRange={serializeRangeBounds(range)}
       initialSearch={rawSearch}
       initialCategories={selectedCategories}
+      lastFetchAt={lastFetchAt}
     />
   )
 }
