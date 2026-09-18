@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Newspaper, Loader2 } from 'lucide-react'
 
 export default function SignupPage() {
+  const router = useRouter()
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -18,7 +20,7 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -42,9 +44,23 @@ export default function SignupPage() {
     if (error) {
       setError(error.message)
       setLoading(false)
-    } else {
-      setDone(true)
+      return
     }
+
+    // Une session dans la réponse = la confirmation d'email est désactivée côté Supabase
+    // (Authentication → Sign In / Providers → Email → Confirm email), le compte est actif
+    // immédiatement. Afficher « Vérifiez vos emails » serait alors faux : aucun message
+    // ne part, et l'utilisateur est déjà connecté.
+    //
+    // Le test porte sur la réponse et non sur un réglage recopié dans le code : la bascule
+    // se fait dans le dashboard, sans redéploiement, et les deux cas doivent marcher.
+    if (data.session) {
+      router.push('/')
+      router.refresh()
+      return
+    }
+
+    setDone(true)
   }
 
   if (done) {
