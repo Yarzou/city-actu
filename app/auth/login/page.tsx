@@ -83,15 +83,18 @@ function LoginForm() {
     }
     setResending(true)
     setResendError(null)
-    const supabase = createClient()
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+    // Notre route, et non `supabase.auth.resend()` : l'email part par le transport Gmail
+    // de l'application. Elle envoie un **lien de connexion**, qui marche que le compte
+    // soit confirmé ou non — voir `app/api/auth/resend/route.ts`.
+    const res = await fetch('/api/auth/resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
     })
+    const payload = await res.json().catch(() => null) as { error?: string } | null
     setResending(false)
-    if (error) {
-      setResendError("L'envoi a échoué. Réessayez dans quelques minutes.")
+    if (!res.ok) {
+      setResendError(payload?.error ?? "L'envoi a échoué. Réessayez dans quelques minutes.")
     } else {
       setResent(true)
     }
@@ -129,7 +132,7 @@ function LoginForm() {
                 className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-50 focus-ring"
               >
                 {resending && <Loader2 className="size-4 animate-spin" />}
-                Renvoyer le lien de confirmation
+                M&apos;envoyer un lien d&apos;accès
               </button>
               {resendError && <p className="mt-2 text-red-700">{resendError}</p>}
             </>
@@ -141,8 +144,9 @@ function LoginForm() {
         <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">
           <p className="font-medium">C&apos;est envoyé.</p>
           <p className="mt-1">
-            Si un compte non confirmé existe pour <strong>{email}</strong>, un nouveau lien
-            vient d&apos;y être expédié. Pensez à regarder vos indésirables.
+            Si un compte existe pour <strong>{email}</strong>, un lien d&apos;accès vient
+            d&apos;y être expédié. Il vous connecte directement et confirme votre adresse.
+            Pensez à regarder vos indésirables.
           </p>
         </div>
       )}

@@ -2,12 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Newspaper, Loader2 } from 'lucide-react'
 
 export default function SignupPage() {
-  const router = useRouter()
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -19,44 +16,26 @@ export default function SignupPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-        // Sans ce paramètre, le lien de confirmation renvoie vers la « Site URL » du
-        // projet Supabase — restée sur `http://localhost:3000`, d'où des emails de
-        // production pointant vers le poste de développement. `window.location.origin`
-        // renvoie vers l'environnement qui a servi le formulaire, donc les deux cas
-        // fonctionnent sans variable d'environnement à tenir à jour.
-        //
-        // `/auth/confirm` et non `/auth/callback` : la confirmation d'email doit
-        // aboutir même ouverte depuis un autre appareil, ce que le flux PKCE de
-        // `/auth/callback` ne permet pas (voir l'en-tête de `app/auth/confirm/route.ts`).
-        //
-        // L'URL doit figurer dans Authentication → URL Configuration → Redirect URLs :
-        // une valeur hors liste est ignorée **sans erreur**, avec repli sur la Site URL
-        // — même symptôme qu'un paramètre oublié. Voir supabase/email-templates/README.md.
-        emailRedirectTo: `${window.location.origin}/auth/confirm`,
-      },
+    /*
+     * L'inscription passe par notre route et non par `supabase.auth.signUp()` : c'est
+     * l'application qui envoie l'email de confirmation (transport Gmail de
+     * `lib/email-notifications.ts`), le SMTP intégré de Supabase plafonnant à quelques
+     * messages par heure avec un expéditeur générique.
+     *
+     * La route répond **la même chose** pour une adresse déjà inscrite — ne pas
+     * réintroduire de message « adresse déjà utilisée » ici, il ferait du formulaire un
+     * moyen de savoir qui possède un compte.
+     */
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, displayName }),
     })
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-      return
-    }
+    const payload = await res.json().catch(() => null) as { error?: string } | null
 
-    // Une session dans la réponse = la confirmation d'email est désactivée côté Supabase
-    // (Authentication → Sign In / Providers → Email → Confirm email), le compte est actif
-    // immédiatement. Afficher « Vérifiez vos emails » serait alors faux : aucun message
-    // ne part, et l'utilisateur est déjà connecté.
-    //
-    // Le test porte sur la réponse et non sur un réglage recopié dans le code : la bascule
-    // se fait dans le dashboard, sans redéploiement, et les deux cas doivent marcher.
-    if (data.session) {
-      router.push('/')
-      router.refresh()
+    if (!res.ok) {
+      setError(payload?.error ?? "L'inscription a échoué.")
+      setLoading(false)
       return
     }
 

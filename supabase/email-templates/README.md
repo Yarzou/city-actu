@@ -1,5 +1,21 @@
 # Emails d'authentification
 
+> **⚠️ Supabase n'envoie plus l'email de confirmation** (18/09/2026). C'est l'application
+> qui l'expédie, par le transport Gmail de `lib/email-notifications.ts` — celui du résumé
+> IA, repris du dépôt neighborshare. Motif : le SMTP intégré de Supabase plafonne à
+> quelques messages par heure (`email rate limit exceeded` atteint dès le deuxième test) et
+> expédie depuis une adresse générique.
+>
+> Chemin réel : `app/auth/signup/page.tsx` → `POST /api/auth/signup` →
+> `generateSignupLink` (`lib/auth/email-links.ts`, API admin, ne déclenche **aucun** envoi)
+> → `sendSignupConfirmationEmail` → `/auth/confirm`. Le renvoi depuis la page de connexion
+> suit le même chemin par `POST /api/auth/resend`.
+>
+> Le contenu de l'email vit donc maintenant **dans le code**, pas dans ce dossier.
+> `confirm-signup.html` n'est plus le chemin nominal : il reste ici comme filet, pour le
+> jour où l'on repasserait à l'envoi natif (il faudrait alors seulement le re-coller dans
+> le dashboard, la route `/auth/confirm` acceptant déjà les deux formes de lien).
+
 Les modèles d'email de Supabase Auth sont un **réglage du projet Supabase**, pas du code :
 rien dans ce dépôt ne les déploie. Les fichiers de ce dossier sont la copie de référence
 de ce qui est collé dans le dashboard — à re-coller après chaque modification ici, sinon
@@ -65,6 +81,18 @@ visible.
 Si la validation échoue quand même (lien expiré — 24 h par défaut — déjà utilisé, ou
 tronqué par un client mail), la route redirige vers `/auth/login?erreur=lien`, qui
 l'explique et propose de renvoyer un lien à l'adresse saisie.
+
+## Tester sans envoyer d'email
+
+Authentication → Sign In / Providers → Email → **Confirm email** désactivé : les comptes
+sont actifs dès l'inscription et aucun message ne part — utile quand le plafond d'envoi est
+atteint. `app/auth/signup/page.tsx` le détecte (une `session` dans la réponse de `signUp`)
+et redirige vers l'accueil au lieu d'afficher « Vérifiez vos emails ». Le test porte sur la
+réponse, pas sur un réglage recopié dans le code : la bascule se fait dans le dashboard,
+sans redéploiement, et les deux cas doivent fonctionner.
+
+Ne pas oublier de le réactiver : sans confirmation, n'importe qui crée un compte avec
+l'adresse d'un autre.
 
 ## SMTP
 
