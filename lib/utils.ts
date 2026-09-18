@@ -53,6 +53,25 @@ export function normalizeSearchText(input: string): string {
     .trim()
 }
 
+/**
+ * Commune d'un `articles.location`, c'est-à-dire le dernier segment avant la virgule.
+ *
+ * La valeur n'est pas homogène d'une source à l'autre : `location_selector` sur
+ * fest.fr rend l'`addressLocality` seul (« Oudon »), tandis que le fetcher open data
+ * assemble « salle, adresse, ville » (`buildLocation`). Chercher la chaîne entière ne
+ * remonterait rien dans le second cas — c'est la commune, et elle seule, qui est
+ * comparable d'un article à l'autre.
+ *
+ * Limite assumée : quand l'open data ne fournit pas de ville, le dernier segment est
+ * une adresse. Le lien reste cliquable et ne remonte que l'article d'origine, ce qui
+ * est inutile mais pas faux.
+ */
+export function extractLocality(location: string | null | undefined): string | null {
+  if (!location) return null
+  const parts = location.split(',').map((part) => part.trim()).filter(Boolean)
+  return parts[parts.length - 1] ?? null
+}
+
 export function groupByDay<T extends Pick<Article, 'published_at'>>(articles: T[]): Map<string, T[]> {
   const map = new Map<string, T[]>()
   for (const article of articles) {

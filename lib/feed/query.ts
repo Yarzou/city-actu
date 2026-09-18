@@ -134,8 +134,14 @@ export async function queryArticles(
 
   if (search) {
     const searchPattern = search.split(' ').filter(Boolean).join('%')
+    // `location_search` (migration 021) entre dans le OU au même titre que le titre et
+    // la description : c'est ce qui fait qu'un clic sur la commune d'une carte remonte
+    // les événements qui s'y déroulent, et non les seuls articles qui la citent — sur
+    // fest.fr le titre est « Concert de… » et la commune ne vit que dans `location`.
+    // Effet de bord assumé sur la recherche au clavier : taper « Nantes » remonte
+    // désormais aussi ce qui a lieu à Nantes.
     query = query.or(
-      `title_search.ilike.%${searchPattern}%,content_preview_search.ilike.%${searchPattern}%`
+      `title_search.ilike.%${searchPattern}%,content_preview_search.ilike.%${searchPattern}%,location_search.ilike.%${searchPattern}%`
     )
   }
 

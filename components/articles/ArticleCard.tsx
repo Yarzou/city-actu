@@ -3,7 +3,7 @@
 import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
 import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX, MapPin } from 'lucide-react'
-import { cn, formatEventDateRange } from '@/lib/utils'
+import { cn, extractLocality, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
 import type { FeedArticle } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
@@ -15,6 +15,11 @@ interface ArticleCardProps {
   canDelete?: boolean
   deleting?: boolean
   onDelete?: (articleId: number) => void
+  /**
+   * Rend la commune du lieu cliquable : elle lance une recherche sur ce nom.
+   * Absent = lieu affiché en simple texte (aucun feed pour porter la recherche).
+   */
+  onLocationSearch?: (locality: string) => void
   scrollRestoreContext?: string
   scrollRestoreCount?: number
   /** Charge l'image sans attendre le lazy-loading : à réserver à la carte du LCP. */
@@ -44,7 +49,7 @@ const CARD_IMAGE_SIZES =
 // Mémoïsé : sans ça toute la grille se re-rendait à chaque changement d'état du feed
 // (frappe dans la recherche, bandeau de feedback…), et chaque carte refait une mesure
 // DOM synchrone dans son useLayoutEffect.
-export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
+export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = article.category?.icon || '📰'
@@ -53,6 +58,15 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
     ? formatEventDateRange(article.published_at, article.event_end_date ?? null)
     : null
   const dateTimeAttr = article.event_end_date ?? article.published_at ?? undefined
+
+  // Commune isolée du reste du lieu : c'est elle qui est cliquable, et elle seule qui
+  // part en recherche — « Capellia, 1 boulevard…, La Chapelle-sur-Erdre » ne
+  // correspondrait à rien. Le préfixe reste affiché, mais c'est lui qui est tronqué en
+  // premier : l'information qui décide de l'intérêt est la commune.
+  const locality = extractLocality(article.location)
+  const localityPrefix = locality && article.location
+    ? article.location.slice(0, article.location.lastIndexOf(locality)).replace(/[\s,]+$/, '')
+    : ''
 
   const [expanded, setExpanded] = useState(false)
   const [isClamped, setIsClamped] = useState(false)
@@ -133,9 +147,25 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
           grille, et c'est la fin — la commune — qui est coupée.
         */}
         {article.location && (
-          <p className="flex items-center gap-1 text-xs text-gray-500" title={article.location}>
+          <p className="flex min-w-0 items-center gap-1 text-xs text-gray-500" title={article.location}>
             <MapPin className="size-3 shrink-0" aria-hidden="true" />
-            <span className="truncate">{article.location}</span>
+            {localityPrefix && <span className="truncate">{localityPrefix},</span>}
+            {locality && (onLocationSearch ? (
+              // Un vrai <button> et non un lien : la carte n'est pas enveloppée dans un
+              // <a>, il n'y a donc rien à imbriquer, et la recherche se fait sans quitter
+              // la page (écriture d'URL par pushState, comme les pastilles de catégorie).
+              // `py-1 -my-1` agrandit la cible au doigt sans écarter la ligne.
+              <button
+                type="button"
+                onClick={() => onLocationSearch(locality)}
+                aria-label={`Rechercher les actualités à ${locality}`}
+                className="-my-1 max-w-full shrink-0 truncate rounded py-1 underline decoration-dotted underline-offset-2 transition-colors hover:text-brand-600 focus-ring"
+              >
+                {locality}
+              </button>
+            ) : (
+              <span className="max-w-full shrink-0 truncate">{locality}</span>
+            ))}
           </p>
         )}
 

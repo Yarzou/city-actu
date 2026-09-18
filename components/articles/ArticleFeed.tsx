@@ -670,6 +670,28 @@ export function ArticleFeed({
     applyFilters(dateRange, searchInput, [], 'push')
   }
 
+  /**
+   * Clic sur la commune d'une carte : la recherche devient ce nom, les autres filtres
+   * (date, catégories) sont conservés.
+   *
+   * `push` et non `replace` — c'est une intention explicite, le retour arrière doit
+   * défaire la recherche et non quitter la page. L'identité doit rester stable, sinon
+   * la mémoïsation de toutes les cartes tombe à chaque changement de filtre : les
+   * valeurs courantes passent donc par une ref plutôt que par les dépendances.
+   *
+   * Remontée en haut de liste, contrairement aux autres filtres : ceux-ci se pilotent
+   * depuis la barre au-dessus du feed, alors qu'on peut cliquer un lieu très bas dans
+   * la page — le résultat serait invisible.
+   */
+  const filtersRef = useRef({ dateRange, selectedCategories })
+  filtersRef.current = { dateRange, selectedCategories }
+
+  const handleLocationSearch = useCallback((locality: string) => {
+    const { dateRange: range, selectedCategories: cats } = filtersRef.current
+    applyFilters(range, locality, cats, 'push')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [applyFilters])
+
   function retry() {
     setError(null)
     setRefetching(true)
@@ -738,6 +760,7 @@ export function ArticleFeed({
         canDelete={Boolean(userId && canManageContent)}
         deleting={deletingArticleId === article.id}
         onDelete={handleDeleteArticle}
+        onLocationSearch={handleLocationSearch}
         scrollRestoreContext={scrollContext}
         scrollRestoreCount={articles.length}
       />
