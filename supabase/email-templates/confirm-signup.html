@@ -14,8 +14,21 @@
     * pas de mode sombre — les clients qui l'appliquent inversent d'eux-mêmes, et une
       media query `prefers-color-scheme` n'est honorée que par une minorité d'entre eux.
 
-  `{{ .ConfirmationURL }}` est la variable Go de Supabase ; elle porte le jeton et
-  redirige vers `emailRedirectTo` (passé par `app/auth/signup/page.tsx`) après validation.
+  Le lien n'utilise **pas** la variable `ConfirmationURL` de Supabase, et c'est le point
+  important de ce fichier. Elle passe par `/auth/v1/verify`, qui redirige vers l'application avec
+  un `?code=` à échanger — un échange qui réclame le `code_verifier` PKCE, déposé dans un
+  cookie du navigateur qui a rempli le formulaire. Ouvrir le mail sur le téléphone après
+  s'être inscrit sur l'ordinateur consommait donc le lien pour rien.
+
+  Le jeton est ici transmis tel quel (`{{ .TokenHash }}`) à `/auth/confirm`, qui le valide
+  côté serveur avec `verifyOtp` : plus rien n'est attendu du navigateur, la confirmation
+  aboutit depuis n'importe quel appareil. Le modèle et `app/auth/confirm/route.ts` forment
+  une paire — changer l'un sans l'autre casse la confirmation.
+
+  `{{ .RedirectTo }}` est l'`emailRedirectTo` passé par `app/auth/signup/page.tsx`, donc
+  l'origine qui a servi le formulaire. Il est **vide** si cette URL n'est pas dans la liste
+  Redirect URLs du dashboard : le `{{ if }}` retombe alors sur la Site URL, ce qui donne un
+  lien toujours cliquable plutôt qu'une URL relative sans hôte.
 -->
 <!DOCTYPE html>
 <html lang="fr">
@@ -43,7 +56,7 @@
       </p>
 
       <!-- Le bouton est un lien stylé : les <button> ne sont pas cliquables en email. -->
-      <a href="{{ .ConfirmationURL }}"
+      <a href="{{ if .RedirectTo }}{{ .RedirectTo }}{{ else }}{{ .SiteURL }}/auth/confirm{{ end }}?token_hash={{ .TokenHash }}&type=signup"
          style="display:inline-block;margin-top:16px;padding:12px 24px;background:#16a34a;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
         Confirmer mon adresse
       </a>
@@ -55,7 +68,7 @@
       -->
       <p style="color:#6b7280;font-size:12px;line-height:1.6;margin:20px 0 0">
         Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br>
-        <span style="color:#16a34a;word-break:break-all">{{ .ConfirmationURL }}</span>
+        <span style="color:#16a34a;word-break:break-all">{{ if .RedirectTo }}{{ .RedirectTo }}{{ else }}{{ .SiteURL }}/auth/confirm{{ end }}?token_hash={{ .TokenHash }}&type=signup</span>
       </p>
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">

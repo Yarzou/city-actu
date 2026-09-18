@@ -29,10 +29,14 @@ export default function SignupPage() {
         // renvoie vers l'environnement qui a servi le formulaire, donc les deux cas
         // fonctionnent sans variable d'environnement à tenir à jour.
         //
+        // `/auth/confirm` et non `/auth/callback` : la confirmation d'email doit
+        // aboutir même ouverte depuis un autre appareil, ce que le flux PKCE de
+        // `/auth/callback` ne permet pas (voir l'en-tête de `app/auth/confirm/route.ts`).
+        //
         // L'URL doit figurer dans Authentication → URL Configuration → Redirect URLs :
         // une valeur hors liste est ignorée **sans erreur**, avec repli sur la Site URL
         // — même symptôme qu'un paramètre oublié. Voir supabase/email-templates/README.md.
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/auth/confirm`,
       },
     })
     if (error) {

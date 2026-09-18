@@ -9,6 +9,12 @@ les deux divergent en silence.
 |---|---|
 | `confirm-signup.html` | Authentication → Emails → **Confirm signup** |
 
+⚠️ `confirm-signup.html` pointe sur `/auth/confirm` et lui passe `{{ .TokenHash }}`, que
+`app/auth/confirm/route.ts` valide avec `verifyOtp`. **Les deux forment une paire** :
+revenir à `{{ .ConfirmationURL }}` dans le modèle réintroduirait l'échec de confirmation
+depuis un autre appareil (voir plus bas), et supprimer la route casserait tous les liens
+déjà envoyés.
+
 Les autres modèles (récupération de mot de passe, lien magique, changement d'adresse) sont
 laissés par défaut : aucune de ces fonctions n'est utilisée par l'application aujourd'hui.
 Le jour où l'une le sera, la dériver de `confirm-signup.html` en ne changeant que le titre,
@@ -30,6 +36,23 @@ sinon vers la **Site URL** du projet. Les deux étaient en cause :
      développement, `http://localhost:3000/**`. Une valeur hors liste est **ignorée
      sans erreur** et Supabase retombe sur la Site URL — le symptôme est exactement
      celui d'un `emailRedirectTo` oublié.
+
+## Le lien ne marchait que dans le navigateur d'origine
+
+Le client navigateur (`@supabase/ssr`) utilise le flux **PKCE** : `signUp()` dépose un
+`code_verifier` dans un cookie, et `{{ .ConfirmationURL }}` ramène un `?code=` qui ne peut
+être échangé qu'avec ce cookie. Inscription sur l'ordinateur, mail relevé sur le
+téléphone — le cas le plus courant — et l'échange échoue : l'utilisateur atterrissait sur
+l'accueil, déconnecté, sans message, **en ayant consommé son lien**.
+
+Le modèle transmet donc `{{ .TokenHash }}` à `/auth/confirm`, qui le valide côté serveur
+(`verifyOtp`). Rien n'est attendu du navigateur, la confirmation aboutit depuis n'importe
+quel appareil. `/auth/callback` reste en place pour le retour OAuth, où le PKCE est
+légitime puisque c'est le même navigateur qui part et revient.
+
+Si la validation échoue quand même (lien expiré — 24 h par défaut — déjà utilisé, ou
+tronqué par un client mail), la route redirige vers `/auth/login?erreur=lien`, qui
+l'explique et propose de renvoyer un lien à l'adresse saisie.
 
 ## SMTP
 
