@@ -114,8 +114,9 @@ function LoginForm() {
             <>
               <p className="font-medium">La connexion n&apos;a pas pu être finalisée.</p>
               <p className="mt-1 text-amber-800">
-                Le lien a peut-être été ouvert dans un autre navigateur que celui de
-                départ. Connectez-vous ci-dessous.
+                Ce lien devait être ouvert dans le navigateur qui a servi à s&apos;inscrire.
+                Votre compte est peut-être déjà confirmé : essayez de vous connecter
+                ci-dessous.
               </p>
             </>
           )}

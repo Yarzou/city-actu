@@ -50,6 +50,18 @@ Le modèle transmet donc `{{ .TokenHash }}` à `/auth/confirm`, qui le valide c�
 quel appareil. `/auth/callback` reste en place pour le retour OAuth, où le PKCE est
 légitime puisque c'est le même navigateur qui part et revient.
 
+`/auth/confirm` accepte **aussi** un `?code=` (flux PKCE) : c'est la forme que prennent les
+mails partis avant la mise à jour du modèle, qui arrivent ici via `/auth/v1/verify` sans
+`token_hash`. Sans ce repli, ces liens étaient rejetés d'office et affichaient « ce lien
+n'est plus valide » — message qui désignait en réalité un modèle non mis à jour.
+
+**Vérifier quel modèle a servi** : ouvrir le lien reçu (clic droit → copier l'adresse, ou
+le lien en clair sous le bouton). `…/auth/v1/verify?token=…` = ancien modèle, le dashboard
+n'a pas pris la modification ; `…/auth/confirm?token_hash=…` = nouveau. Deux pièges du
+dashboard : la modification n'est prise qu'après **Save**, et chaque modèle a son propre
+onglet — éditer « Magic Link » en croyant éditer « Confirm signup » ne produit aucun effet
+visible.
+
 Si la validation échoue quand même (lien expiré — 24 h par défaut — déjà utilisé, ou
 tronqué par un client mail), la route redirige vers `/auth/login?erreur=lien`, qui
 l'explique et propose de renvoyer un lien à l'adresse saisie.

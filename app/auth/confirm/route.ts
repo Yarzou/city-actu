@@ -57,7 +57,27 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type')
+  const code = searchParams.get('code')
   const next = safeNext(searchParams.get('next'))
+
+  /*
+   * Repli sur le flux PKCE : les emails partis **avant** la mise à jour du modèle
+   * portent encore un lien `{{ .ConfirmationURL }}`, qui passe par `/auth/v1/verify` et
+   * arrive ici avec un `?code=` et aucun `token_hash`. Sans cette branche, ces liens
+   * étaient rejetés d'office — et le message « ce lien n'est plus valide » désignait le
+   * modèle non mis à jour, pas le lien.
+   *
+   * L'échange garde sa limite d'origine (cookie du navigateur qui s'est inscrit), d'où
+   * `erreur=session` et non `erreur=lien` : le recours n'est pas le même, c'est le
+   * navigateur de départ qu'il faut, pas un nouvel envoi.
+   */
+  if (!tokenHash && code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    return NextResponse.redirect(
+      error ? `${origin}/auth/login?erreur=session` : `${origin}${next}`
+    )
+  }
 
   if (!tokenHash || !isEmailOtpType(type)) {
     return NextResponse.redirect(`${origin}/auth/login?erreur=lien`)
