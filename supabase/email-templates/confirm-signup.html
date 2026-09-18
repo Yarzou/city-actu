@@ -1,0 +1,70 @@
+<!--
+  Template « Confirm signup » de Supabase Auth.
+
+  À coller dans Dashboard → Authentication → Emails → Confirm signup. Ce réglage vit
+  dans le projet Supabase, pas dans le dépôt : ce fichier en est la copie de référence,
+  à re-coller après toute modification ici (rien ne les synchronise).
+
+  Gabarit repris de `lib/email-notifications.ts` du dépôt neighborshare (baseTemplate +
+  ctaButton), adapté à Ville Actu. Contraintes propres à l'email, à ne pas « nettoyer » :
+
+    * tout en styles **inline** — Gmail supprime les <style> et ignore les classes ;
+    * tableaux et largeur fixe plutôt que flex/grid, qu'Outlook (moteur Word) ne rend pas ;
+    * couleurs en hexadécimal en dur : aucun Tailwind ni variable CSS ici ;
+    * pas de mode sombre — les clients qui l'appliquent inversent d'eux-mêmes, et une
+      media query `prefers-color-scheme` n'est honorée que par une minorité d'entre eux.
+
+  `{{ .ConfirmationURL }}` est la variable Go de Supabase ; elle porte le jeton et
+  redirige vers `emailRedirectTo` (passé par `app/auth/signup/page.tsx`) après validation.
+-->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Confirmez votre inscription</title>
+</head>
+<body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:24px">
+  <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+
+    <div style="background:#16a34a;padding:20px 28px">
+      <span style="color:#ffffff;font-size:18px;font-weight:700">📰 Ville Actu</span>
+    </div>
+
+    <div style="padding:28px">
+      <h2 style="margin:0 0 8px;font-size:20px;color:#111827">Confirmez votre adresse email</h2>
+
+      <p style="color:#374151;line-height:1.6;margin:0 0 12px">
+        Bienvenue sur <strong>Ville Actu</strong>, l'actualité de La Chapelle-sur-Erdre au même endroit.
+      </p>
+      <p style="color:#374151;line-height:1.6;margin:0">
+        Il reste une étape : confirmez cette adresse pour activer votre compte et retrouver
+        vos favoris d'un appareil à l'autre.
+      </p>
+
+      <!-- Le bouton est un lien stylé : les <button> ne sont pas cliquables en email. -->
+      <a href="{{ .ConfirmationURL }}"
+         style="display:inline-block;margin-top:16px;padding:12px 24px;background:#16a34a;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
+        Confirmer mon adresse
+      </a>
+
+      <!--
+        L'URL en clair n'est pas une redite : certains clients et passerelles
+        d'entreprise neutralisent les liens des boutons, et c'est alors le seul moyen
+        d'aller au bout. `word-break` évite qu'elle déborde de la carte sur mobile.
+      -->
+      <p style="color:#6b7280;font-size:12px;line-height:1.6;margin:20px 0 0">
+        Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br>
+        <span style="color:#16a34a;word-break:break-all">{{ .ConfirmationURL }}</span>
+      </p>
+
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">
+
+      <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0">
+        Vous n'êtes pas à l'origine de cette inscription ? Ignorez simplement ce message,
+        aucun compte ne sera activé.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

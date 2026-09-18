@@ -21,7 +21,19 @@ export default function SignupPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        // Sans ce paramètre, le lien de confirmation renvoie vers la « Site URL » du
+        // projet Supabase — restée sur `http://localhost:3000`, d'où des emails de
+        // production pointant vers le poste de développement. `window.location.origin`
+        // renvoie vers l'environnement qui a servi le formulaire, donc les deux cas
+        // fonctionnent sans variable d'environnement à tenir à jour.
+        //
+        // L'URL doit figurer dans Authentication → URL Configuration → Redirect URLs :
+        // une valeur hors liste est ignorée **sans erreur**, avec repli sur la Site URL
+        // — même symptôme qu'un paramètre oublié. Voir supabase/email-templates/README.md.
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     })
     if (error) {
       setError(error.message)
