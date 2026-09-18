@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { ChevronDown, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
+import { ChevronDown, Search, TriangleAlert, X } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard } from './ArticleCard'
@@ -199,11 +199,10 @@ export function ArticleFeed({
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     () => initialCategories ?? parseCategoryParam(searchParams.get('cat') ?? undefined, categoryList ?? [])
   )
-  const [refreshing, setRefreshing] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
-  // En état et non en simple prop : un rafraîchissement manuel relit les sources sans
-  // repasser par le serveur, la date affichée doit suivre le geste.
+  // En état et non en simple prop : sur un onglet atteint côté client, le serveur ne
+  // prépare pas cette date (prop `lastFetchAt`) et le feed la lit lui-même au montage.
   const [lastFetch, setLastFetch] = useState<string | null>(lastFetchAt)
 
   const hasInitializedRef = useRef(isHydrated)
@@ -679,33 +678,6 @@ export function ArticleFeed({
     )
   }
 
-  async function handleRefresh() {
-    if (!canManageContent) return
-    setRefreshing(true)
-    setRefreshFeedback(null)
-    try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
-      const data = await res.json()
-      if (res.status === 401) {
-        setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
-      } else if (data.ok) {
-        const s = data.summary
-        setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)` })
-        setLastFetch(new Date().toISOString())
-        setOffset(0)
-        setRefetching(true)
-        await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories })
-        setRefetching(false)
-      } else {
-        setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
-      }
-    } catch {
-      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
-    }
-    setRefreshing(false)
-    setTimeout(() => setRefreshFeedback(null), 5000)
-  }
-
   // Identité stable : ArticleCard est mémoïsé, une fonction recréée à chaque render
   // invaliderait la mémoïsation de toutes les cartes.
   const handleDeleteArticle = useCallback(async (articleId: number) => {
@@ -798,20 +770,7 @@ export function ArticleFeed({
             segment de route, le feed n'a donc jamais « une » catégorie courante — il a
             une sélection, éventuellement multiple, affichée par les pastilles.
           */}
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">{cityName || citySlug}</h1>
-            {userId && canManageContent && (
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                aria-label="Rafraîchir les sources"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring"
-              >
-                <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-                <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
-              </button>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">{cityName || citySlug}</h1>
           {refreshFeedback && (
             <p role="status" className={cn('mt-2 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
               {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}

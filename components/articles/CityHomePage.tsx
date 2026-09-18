@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, MapPin, Heart, Sparkles, RefreshCw } from 'lucide-react'
+import { Newspaper, MapPin, Heart, Sparkles } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
 import { cn } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, pushTab, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
@@ -91,9 +91,6 @@ export function CityHomePage({
   initialDigest,
   children,
 }: CityHomePageProps) {
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
-
   // L'onglet vit dans l'URL (`?tab=`) et non plus en state local : il est désormais
   // partageable, survit au rafraîchissement, se défait au bouton retour, et peut
   // servir de cible aux raccourcis du manifeste PWA.
@@ -108,32 +105,6 @@ export function CityHomePage({
   // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
   const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
 
-  async function handleRefresh() {
-    setRefreshing(true)
-    setRefreshFeedback(null)
-    try {
-      const res = await fetch('/api/admin/refresh', { method: 'POST' })
-      const data = await res.json()
-      if (res.status === 401) {
-        setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
-      } else if (data.ok) {
-        const s = data.summary
-        const updated = s.updated ? `, ${s.updated} mis à jour` : ''
-        setRefreshFeedback({ ok: true, msg: `${s.inserted} nouvel(s) article(s) ajouté(s)${updated}` })
-      } else {
-        setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
-      }
-    } catch {
-      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
-    }
-    setRefreshing(false)
-    setTimeout(() => setRefreshFeedback(null), 5000)
-  }
-
-  // Le rafraîchissement manuel est réservé à l'administration : c'est la seule action
-  // du panneau accessible depuis le feed.
-  const canRefresh = Boolean(userId && isAdmin)
-
   const isServerRenderedTab = tab === serverTab
   const isFeedTab = tab === 'actus' || tab === 'metropole'
 
@@ -145,25 +116,9 @@ export function CityHomePage({
         page garde un <h1> annonçable — et pour ne pas laisser deux titres concurrents
         à l'écran.
       */}
-      <div className="flex items-center justify-between gap-4 sm:mb-6">
+      <div className="sm:mb-6">
         <h1 className="sr-only sm:not-sr-only text-3xl font-bold text-gray-900 tracking-tight">{cityName}</h1>
-        {canRefresh && (
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            aria-label="Rafraîchir les sources"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 focus-ring"
-          >
-            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            <span>{refreshing ? 'Rafraîchissement…' : 'Rafraîchir'}</span>
-          </button>
-        )}
       </div>
-      {refreshFeedback && (
-        <p role="status" className={cn('mb-4 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
-          {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
-        </p>
-      )}
 
       {/*
         Onglets : desktop uniquement. Sur mobile, la barre de navigation basse fait le
