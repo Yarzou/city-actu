@@ -73,4 +73,8 @@
        cliquable la commune affichée sur les cartes -->
   <include file="liquibase/changelog/021-article-location-search.sql"/>
 
+  <!-- handle_new_user() : search_path figé et table qualifiée — « Database error saving
+       new user » à l’inscription -->
+  <include file="liquibase/changelog/022-fix-handle-new-user.sql"/>
+
 </databaseChangeLog>
