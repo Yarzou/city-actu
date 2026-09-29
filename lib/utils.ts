@@ -1,52 +1,110 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { isToday, isYesterday, isTomorrow, format } from 'date-fns'
-import { fr } from 'date-fns/locale'
 import type { Article } from '@/lib/types'
+import { isUnknownTime, parisDateISO, parisWallClock } from '@/lib/fetchers/dates'
+import { addCivilDays, civilDateToISO, parseCivilDate } from '@/lib/feed/paris-time'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  if (isToday(date)) return "Aujourd'hui"
-  if (isYesterday(date)) return 'Hier'
-  if (isTomorrow(date)) return 'Demain'
-  return format(date, 'dd/MM/yyyy', { locale: fr })
-}
+/*
+ * Formatage des dates d'événement — toujours en Europe/Paris, jamais en heure locale.
+ *
+ * Les anciennes fonctions passaient par `isToday` / `format` de date-fns, qui raisonnent
+ * dans le fuseau de la machine. La première page étant rendue par le serveur (Vercel,
+ * UTC) puis hydratée par le navigateur (Paris), les deux côtés pouvaient produire deux
+ * libellés différents pour la même carte entre minuit et 2 h. Tout repose désormais sur
+ * `Intl.DateTimeFormat` avec `timeZone` figé, et sur la date civile parisienne.
+ */
+const PARIS_TZ = 'Europe/Paris'
 
-export function formatEventDateRange(startStr: string, endStr: string | null): string {
-  const start = new Date(startStr)
-  if (!endStr) return formatDate(startStr)
-  const end = new Date(endStr)
-  // Same day
-  if (format(start, 'yyyy-MM-dd') === format(end, 'yyyy-MM-dd')) return formatDate(startStr)
-  // Same month+year
-  if (format(start, 'MM/yyyy') === format(end, 'MM/yyyy')) {
-    return `${format(start, 'd', { locale: fr })} - ${format(end, 'd MMM yyyy', { locale: fr })}`
+const WEEKDAY_DAY_MONTH = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, weekday: 'short', day: 'numeric', month: 'short',
+})
+const WEEKDAY_DAY_MONTH_YEAR = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+})
+const DAY_MONTH = new Intl.DateTimeFormat('fr-FR', { timeZone: PARIS_TZ, day: 'numeric', month: 'short' })
+const DAY_MONTH_YEAR = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, day: 'numeric', month: 'short', year: 'numeric',
+})
+const DAY = new Intl.DateTimeFormat('fr-FR', { timeZone: PARIS_TZ, day: 'numeric' })
+const LONG_DAY = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, weekday: 'long', day: 'numeric', month: 'long',
+})
+const LONG_DAY_YEAR = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+})
+
+/** Clés de journée `YYYY-MM-DD` d'aujourd'hui, demain et hier, en date civile de Paris. */
+function relativeDayKeys(now: Date) {
+  const today = parisDateISO(now)
+  const civil = parseCivilDate(today)!
+  return {
+    today,
+    tomorrow: civilDateToISO(addCivilDays(civil, 1)),
+    yesterday: civilDateToISO(addCivilDays(civil, -1)),
   }
-  // Different months
-  return `${format(start, 'd MMM', { locale: fr })} - ${format(end, 'd MMM yyyy', { locale: fr })}`
 }
 
-export function formatDateShort(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+function relativeDayLabel(dayKey: string, now: Date): string | null {
+  const keys = relativeDayKeys(now)
+  if (dayKey === keys.today) return "Aujourd'hui"
+  if (dayKey === keys.tomorrow) return 'Demain'
+  if (dayKey === keys.yesterday) return 'Hier'
+  return null
 }
 
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.slice(0, maxLength).trimEnd() + '…'
+/** « 20h », « 20h30 » — ou null quand l'instant porte l'ancrage « heure inconnue ». */
+export function formatEventTime(at: Date): string | null {
+  if (isUnknownTime(at)) return null
+  const [h, m] = parisWallClock(at).split(':')
+  // Certains moteurs ICU rendent minuit « 24:00 » en cycle 24 h.
+  const hour = String(parseInt(h, 10) % 24)
+  return m === '00' ? `${hour}h` : `${hour}h${m}`
+}
+
+/**
+ * Date d'une carte : « Aujourd'hui · 20h30 », « sam. 3 oct. », « 3 – 5 oct. »,
+ * « 27 juin – 1 nov. », « Jusqu'au 1 nov. » pour un événement déjà commencé.
+ *
+ * L'heure n'apparaît que sur une date unique et quand la source l'a donnée : les
+ * fetchers ancrent à midi les dates sans heure (voir `isUnknownTime`), et afficher
+ * « 12h » à tous ces événements inventerait un horaire. L'année n'est ajoutée que si
+ * elle diffère de l'année en cours.
+ */
+export function formatEventDateRange(startStr: string, endStr: string | null, now: Date = new Date()): string {
+  const start = new Date(startStr)
+  const end = endStr ? new Date(endStr) : null
+  const startKey = parisDateISO(start)
+  const endKey = end ? parisDateISO(end) : null
+  const { today } = relativeDayKeys(now)
+  const currentYear = today.slice(0, 4)
+
+  if (!endKey || endKey === startKey) {
+    const relative = relativeDayLabel(startKey, now)
+    const day = relative ?? (startKey.slice(0, 4) === currentYear
+      ? WEEKDAY_DAY_MONTH.format(start)
+      : WEEKDAY_DAY_MONTH_YEAR.format(start))
+    const time = formatEventTime(start)
+    return time ? `${day} · ${time}` : day
+  }
+
+  const endLabel = endKey.slice(0, 4) === currentYear ? DAY_MONTH.format(end!) : DAY_MONTH_YEAR.format(end!)
+
+  // Déjà commencé et pas encore fini : c'est la fin qui compte, pas un début passé.
+  if (startKey < today && endKey >= today) return `Jusqu'au ${endLabel}`
+
+  // Même mois : « 3 – 5 oct. » ; sinon « 27 juin – 1 nov. ».
+  if (startKey.slice(0, 7) === endKey.slice(0, 7)) return `${DAY.format(start)} – ${endLabel}`
+  return `${DAY_MONTH.format(start)} – ${endLabel}`
 }
 
 export function normalizeSearchText(input: string): string {
   return input
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -72,12 +130,31 @@ export function extractLocality(location: string | null | undefined): string | n
   return parts[parts.length - 1] ?? null
 }
 
-export function groupByDay<T extends Pick<Article, 'published_at'>>(articles: T[]): Map<string, T[]> {
+/** Clé de groupe des articles sans date : ils restent visibles en permanence. */
+export const UNDATED_DAY_KEY = 'unknown'
+
+/**
+ * Regroupe les articles par journée civile de Paris, dans l'ordre d'arrivée.
+ *
+ * Un événement déjà commencé et toujours en cours (exposition sur quatre mois) est
+ * rangé sous **aujourd'hui** et non sous sa date de début : le feed par défaut le
+ * remonte en tête parce qu'il est en cours, une rubrique « samedi 27 juin » au-dessus
+ * de « Aujourd'hui » serait un contresens. Les articles sans date vont dans
+ * `UNDATED_DAY_KEY`.
+ */
+export function groupByDay<T extends Pick<Article, 'published_at' | 'event_end_date'>>(
+  articles: T[],
+  now: Date = new Date()
+): Map<string, T[]> {
+  const { today } = relativeDayKeys(now)
   const map = new Map<string, T[]>()
   for (const article of articles) {
-    const key = article.published_at
-      ? format(new Date(article.published_at), 'yyyy-MM-dd')
-      : 'unknown'
+    let key = UNDATED_DAY_KEY
+    if (article.published_at) {
+      key = parisDateISO(new Date(article.published_at))
+      const endKey = article.event_end_date ? parisDateISO(new Date(article.event_end_date)) : null
+      if (key < today && endKey && endKey >= today) key = today
+    }
     const group = map.get(key) ?? []
     group.push(article)
     map.set(key, group)
@@ -85,13 +162,15 @@ export function groupByDay<T extends Pick<Article, 'published_at'>>(articles: T[
   return map
 }
 
-export function formatDayHeader(dateKey: string): string {
-  if (dateKey === 'unknown') return 'Date inconnue'
-  const date = new Date(dateKey + 'T12:00:00')
-  if (isToday(date)) return `Aujourd'hui – ${format(date, 'EEEE d MMMM', { locale: fr })}`
-  if (isYesterday(date)) return `Hier – ${format(date, 'EEEE d MMMM', { locale: fr })}`
-  if (isTomorrow(date)) return `Demain – ${format(date, 'EEEE d MMMM', { locale: fr })}`
-  return format(date, 'EEEE d MMMM yyyy', { locale: fr })
+/** « Aujourd'hui – mardi 29 septembre », « jeudi 15 janvier 2027 », « Sans date ». */
+export function formatDayHeader(dateKey: string, now: Date = new Date()): string {
+  if (dateKey === UNDATED_DAY_KEY) return 'Sans date'
+  // Midi UTC tombe toujours le même jour civil à Paris (13 h ou 14 h).
+  const at = new Date(`${dateKey}T12:00:00Z`)
+  const { today } = relativeDayKeys(now)
+  const long = dateKey.slice(0, 4) === today.slice(0, 4) ? LONG_DAY.format(at) : LONG_DAY_YEAR.format(at)
+  const relative = relativeDayLabel(dateKey, now)
+  return relative ? `${relative} – ${long}` : long
 }
 
 function sanitizeHtml(input: string): string {

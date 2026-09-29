@@ -1,23 +1,19 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import { ChevronDown, Search, TriangleAlert, X } from 'lucide-react'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { createClient } from '@/lib/supabase/client'
-import { ArticleCard } from './ArticleCard'
+import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
-import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { queryArticles, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
 import { fetchLastFetchAt } from '@/lib/feed/last-update'
-import { parisHorizonISO, buildCivilFromDate, formatParisDateTime } from '@/lib/feed/paris-time'
+import { parisHorizonISO, formatParisDateTime } from '@/lib/feed/paris-time'
 import {
   deserializeRangeBounds,
   parseDateParam,
   serializeDateRange,
-  buildSingleDayRange,
   type DateRange,
   type SerializedDateRange,
 } from '@/lib/feed/date-params'
@@ -28,13 +24,6 @@ import {
 } from '@/lib/feed/category-params'
 import type { FeedArticle, Category as CategoryType } from '@/lib/types'
 import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
-
-// Chargé à la demande : le mini-calendrier est une commande desktop, il tire la
-// locale française de date-fns et une grille de 42 jours. Il était auparavant monté
-// sur mobile puis masqué en CSS (`hidden sm:block`).
-const MiniCalendar = dynamic(() => import('./MiniCalendar').then((m) => m.MiniCalendar), {
-  ssr: false,
-})
 
 const PAGE_SIZE = 20
 const SEARCH_DEBOUNCE_MS = 250
@@ -110,7 +99,6 @@ function clearExternalScrollSnapshot() {
   window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
 }
 
-const GRID_CLASSES = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
 const LIST_CLASSES =
   'flex flex-col gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:gap-4'
 
@@ -119,8 +107,6 @@ interface ArticleFeedProps {
   categorySlug?: string
   excludeCategorySlug?: string
   canManageContent?: boolean
-  hideHeader?: boolean
-  hideMiniCalendar?: boolean
   hideCategoryTabs?: boolean
 
   /**
@@ -135,6 +121,8 @@ interface ArticleFeedProps {
   horizon?: string
   initialArticles?: FeedArticle[] | null
   initialHasMore?: boolean
+  /** Total retenu par les filtres du premier rendu (voir `FeedQueryResult.total`). */
+  initialTotal?: number | null
   initialError?: string | null
   initialFavorites?: number[]
   initialRange?: SerializedDateRange | null
@@ -150,8 +138,6 @@ export function ArticleFeed({
   categorySlug,
   excludeCategorySlug,
   canManageContent = false,
-  hideHeader = false,
-  hideMiniCalendar = false,
   hideCategoryTabs = false,
   categories: categoryList,
   userId: initialUserId = null,
@@ -159,6 +145,7 @@ export function ArticleFeed({
   horizon,
   initialArticles = null,
   initialHasMore = false,
+  initialTotal = null,
   initialError = null,
   initialFavorites,
   initialRange = null,
@@ -174,7 +161,6 @@ export function ArticleFeed({
 
   const [articles, setArticles] = useState<FeedArticle[]>(initialArticles ?? [])
   const [categories, setCategories] = useState<CategoryType[]>(categoryList ?? [])
-  const [cityName, setCityName] = useState<string>(feedContext?.cityName ?? '')
   const [userId, setUserId] = useState<string | null>(initialUserId)
   const [favorites, setFavorites] = useState<Set<number>>(new Set(initialFavorites ?? []))
   // `loading` = premier remplissage, écran encore vide → squelettes.
@@ -184,13 +170,13 @@ export function ArticleFeed({
   const [refetching, setRefetching] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(initialHasMore)
+  // Total retenu par les filtres, toutes pages confondues. Null tant qu'inconnu.
+  const [total, setTotal] = useState<number | null>(initialTotal)
   const [error, setError] = useState<string | null>(initialError)
   const [offset, setOffset] = useState(initialArticles?.length ?? 0)
   const [dateRange, setDateRange] = useState<DateRange | null>(() =>
     deserializeRangeBounds(initialRange)
   )
-  const [activeDates, setActiveDates] = useState<string[]>([])
-  const [calendarMonth, setCalendarMonth] = useState(() => deserializeRangeBounds(initialRange)?.from ?? new Date())
   const [searchInput, setSearchInput] = useState(initialSearch)
   const [searchQuery, setSearchQuery] = useState(() => normalizeSearchText(initialSearch))
   // Sélection cumulative de catégories. La catégorie mise en avant a son propre onglet,
@@ -221,9 +207,6 @@ export function ArticleFeed({
   // Nombre de pages déjà chargées automatiquement. En état et non en ref : la valeur
   // décide de l'affichage du bouton, donc elle est lue pendant le rendu.
   const [autoLoads, setAutoLoads] = useState(0)
-
-  const isDesktop = useIsDesktop()
-  const showMiniCalendar = !hideMiniCalendar && isDesktop
 
   const scrollContext = useMemo(
     () => buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery),
@@ -351,6 +334,7 @@ export function ArticleFeed({
 
       setError(null)
       setHasMore(result.hasMore)
+      if (result.total !== null) setTotal(result.total)
       if (reset) {
         setArticles(result.articles)
         setAutoLoads(0)
@@ -362,33 +346,6 @@ export function ArticleFeed({
     },
     [categorySlug, resolveCategoryIds]
   )
-
-  const fetchActiveDates = useCallback(async (month: Date) => {
-    const context = contextRef.current
-    if (!context) return
-
-    const supabase = createClient()
-    let query = supabase
-      .from('articles')
-      .select('published_at')
-      .eq('city_id', context.cityId)
-      .eq('is_duplicate', false)
-      .gte('published_at', startOfMonth(month).toISOString())
-      .lte('published_at', endOfMonth(month).toISOString())
-      .not('published_at', 'is', null)
-
-    if (context.excludeCategoryId !== null) {
-      query = query.neq('category_id', context.excludeCategoryId)
-    }
-
-    const { data } = await query
-    if (!data) return
-
-    setActiveDates([
-      ...new Set(data.map((a) => format(new Date(a.published_at!), 'yyyy-MM-dd'))),
-    ])
-    // Aucune dépendance : les identifiants viennent de contextRef.
-  }, [])
 
   /**
    * Point d'entrée unique des filtres : état local, URL et requête bougent ensemble.
@@ -464,7 +421,6 @@ export function ArticleFeed({
           await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount })
           setRefetching(false)
         }
-        if (showMiniCalendar) void fetchActiveDates(calendarMonth)
         return
       }
 
@@ -489,11 +445,9 @@ export function ArticleFeed({
       }
 
       contextRef.current = context
-      setCityName(context.cityName)
 
       await Promise.all([
         runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount }),
-        showMiniCalendar ? fetchActiveDates(calendarMonth) : Promise.resolve(),
         // La date de dernière collecte est une propriété de la **ville**, pas du feed :
         // elle doit s'afficher sur « Autour de la Chap' » comme sur « Actus ». Le
         // serveur ne la prépare que pour l'onglet qu'il rend (prop `lastFetchAt`) ;
@@ -518,16 +472,6 @@ export function ArticleFeed({
     void init()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [citySlug, categorySlug, excludeCategorySlug])
-
-  // Le mini-calendrier n'apparaît qu'après hydratation sur desktop : ses dates
-  // actives ne peuvent donc pas être chargées au montage.
-  useEffect(() => {
-    if (!showMiniCalendar) return
-    if (!hasInitializedRef.current) return
-    if (activeDates.length > 0) return
-    void fetchActiveDates(calendarMonth)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showMiniCalendar])
 
   // Recherche débouncée → requête + URL. En `replace` : un `push` par frappe
   // remplirait l'historique d'états intermédiaires que personne ne veut revisiter.
@@ -647,15 +591,6 @@ export function ArticleFeed({
     [applyFilters, searchInput, selectedCategories]
   )
 
-  function handleCalendarSelect(date: Date) {
-    applyDateRange(buildSingleDayRange(buildCivilFromDate(date)))
-  }
-
-  function handleMonthChange(month: Date) {
-    setCalendarMonth(month)
-    void fetchActiveDates(month)
-  }
-
   function resetFilters() {
     applyFilters(null, '', [], 'push')
   }
@@ -684,7 +619,9 @@ export function ArticleFeed({
    * la page — le résultat serait invisible.
    */
   const filtersRef = useRef({ dateRange, selectedCategories })
-  filtersRef.current = { dateRange, selectedCategories }
+  useEffect(() => {
+    filtersRef.current = { dateRange, selectedCategories }
+  }, [dateRange, selectedCategories])
 
   const handleLocationSearch = useCallback((locality: string) => {
     const { dateRange: range, selectedCategories: cats } = filtersRef.current
@@ -700,11 +637,29 @@ export function ArticleFeed({
     )
   }
 
+  // Bandeau de retour, effacé après cinq secondes. Une seule porte d'entrée pour le
+  // masquage, les favoris et le partage — chacun posait son propre timer avant.
+  const notify = useCallback((feedback: CardFeedback) => {
+    setRefreshFeedback(feedback)
+    window.setTimeout(() => setRefreshFeedback(null), 5000)
+  }, [])
+
+  // Le jeu des favoris suit les écritures réussies : sinon un article redevenu visible
+  // après un changement de filtre repartait avec l'état du premier rendu.
+  const handleFavoriteToggled = useCallback((articleId: number, favorited: boolean) => {
+    setFavorites((prev) => {
+      const next = new Set(prev)
+      if (favorited) next.add(articleId)
+      else next.delete(articleId)
+      return next
+    })
+  }, [])
+
   // Identité stable : ArticleCard est mémoïsé, une fonction recréée à chaque render
   // invaliderait la mémoïsation de toutes les cartes.
   const handleDeleteArticle = useCallback(async (articleId: number) => {
     if (!userId || !canManageContent) {
-      setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
+      notify({ ok: false, msg: 'Vous devez être connecté.' })
       return
     }
 
@@ -717,7 +672,7 @@ export function ArticleFeed({
       })
       const data = await res.json()
       if (res.status === 401) {
-        setRefreshFeedback({ ok: false, msg: 'Vous devez être connecté.' })
+        notify({ ok: false, msg: 'Vous devez être connecté.' })
       } else if (data.ok) {
         setArticles(prev => prev.filter(article => article.id !== articleId))
         setFavorites(prev => {
@@ -725,26 +680,39 @@ export function ArticleFeed({
           next.delete(articleId)
           return next
         })
+        setTotal((prev) => (prev === null ? prev : Math.max(0, prev - 1)))
         // « Masquée » et non « supprimée » : la ligne reste en base avec is_duplicate=true,
         // sinon le prochain cron la recréerait tant que l'URL est dans le flux source.
-        setRefreshFeedback({ ok: true, msg: 'Actu masquée.' })
+        notify({ ok: true, msg: 'Actu masquée.' })
       } else {
-        setRefreshFeedback({ ok: false, msg: data.error ?? 'Erreur inconnue' })
+        notify({ ok: false, msg: data.error ?? 'Erreur inconnue' })
       }
     } catch {
-      setRefreshFeedback({ ok: false, msg: 'Erreur réseau' })
+      notify({ ok: false, msg: 'Erreur réseau' })
     } finally {
       setDeletingArticleId(null)
-      setTimeout(() => setRefreshFeedback(null), 5000)
     }
-  }, [userId, canManageContent])
+  }, [userId, canManageContent, notify])
 
-  // Mémoïsé : reparser toutes les dates du tableau à chaque render était inutile,
-  // et le coût grandit avec le nombre de pages chargées.
-  const grouped = useMemo(() => (dateRange ? groupByDay(articles) : null), [dateRange, articles])
+  // Regroupé par jour **toujours**, plus seulement sous filtre de date : sans repère,
+  // le feed par défaut était une grille plate où les événements de novembre suivaient
+  // ceux de ce soir. Mémoïsé : reparser toutes les dates à chaque render était
+  // inutile, et le coût grandit avec le nombre de pages chargées.
+  const grouped = useMemo(() => groupByDay(articles), [articles])
   const hasActiveFilters =
     Boolean(dateRange) || Boolean(searchQuery) || selectedCategories.length > 0
   const selectedCategorySet = useMemo(() => new Set(selectedCategories), [selectedCategories])
+
+  // « 12 actus · Ce weekend », « 3 actus pour « Oudon » ». Le total vient de la
+  // requête, pas de la longueur de la liste : celle-ci n'est qu'une page.
+  const countLabel = useMemo(() => {
+    if (total === null) return null
+    const noun = total === 1 ? 'actu' : 'actus'
+    const parts = [`${total} ${noun}`]
+    if (dateRange?.label) parts.push(`· ${dateRange.label}`)
+    if (searchQuery) parts.push(`pour « ${searchInput.trim()} »`)
+    return parts.join(' ')
+  }, [total, dateRange, searchQuery, searchInput])
 
   function renderCard(article: FeedArticle, absoluteIndex: number) {
     return (
@@ -761,6 +729,8 @@ export function ArticleFeed({
         deleting={deletingArticleId === article.id}
         onDelete={handleDeleteArticle}
         onLocationSearch={handleLocationSearch}
+        onFavoriteToggled={handleFavoriteToggled}
+        onFeedback={notify}
         scrollRestoreContext={scrollContext}
         scrollRestoreCount={articles.length}
       />
@@ -785,41 +755,20 @@ export function ArticleFeed({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      {!hideHeader && (
-        <div className="mb-6">
-          {/*
-            Plus de fil d'Ariane ni de titre de catégorie : une catégorie n'est plus un
-            segment de route, le feed n'a donc jamais « une » catégorie courante — il a
-            une sélection, éventuellement multiple, affichée par les pastilles.
-          */}
-          <h1 className="text-2xl font-bold text-gray-900">{cityName || citySlug}</h1>
-          {refreshFeedback && (
-            <p role="status" className={cn('mt-2 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
-              {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
-            </p>
-          )}
-        </div>
-      )}
-      {hideHeader && refreshFeedback && (
+      {/*
+        Retour des actions de carte (masquage, favori, partage). Plus d'en-tête ici :
+        le titre de la ville est porté par `CityHomePage`, le `<h1>` de ce composant
+        ne se rendait jamais (ses deux appelants le masquaient).
+      */}
+      {refreshFeedback && (
         <p role="status" className={cn('mb-4 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
-          {refreshFeedback.ok ? '✅' : '❌'} {refreshFeedback.msg}
+          {refreshFeedback.msg}
         </p>
       )}
 
-      {/* Main layout: calendar (desktop) + content */}
-      <div className="flex gap-6 items-start">
-        {showMiniCalendar && (
-          <MiniCalendar
-            selected={dateRange ? dateRange.from : null}
-            onChange={handleCalendarSelect}
-            activeDates={activeDates}
-            onMonthChange={handleMonthChange}
-          />
-        )}
-
-        {/* Right: filters + feed */}
-        <div className="flex-1 min-w-0">
+      {/* Plus de mini-calendrier latéral : la pastille « Date… » sert tous les écrans. */}
+      <div>
+        <div>
           <div className="mb-4">
             {lastFetchLabel && (
               <p className="mb-2 text-xs text-gray-500">Mis à jour le {lastFetchLabel}</p>
@@ -920,10 +869,15 @@ export function ArticleFeed({
             </div>
           )}
 
+          {/* Compteur : dit ce que les filtres ont retenu, ce que rien n'indiquait. */}
+          {countLabel && !loading && !error && articles.length > 0 && (
+            <p className="mb-3 text-xs text-gray-500" aria-live="polite">{countLabel}</p>
+          )}
+
           {/* Feed */}
           <div role="status" aria-live="polite" aria-busy={loading || refetching}>
             {loading ? (
-              <div className={grouped ? LIST_CLASSES : GRID_CLASSES} aria-hidden="true">
+              <div className={LIST_CLASSES} aria-hidden="true">
                 {/* Six et non douze : sur mobile une colonne, douze cartes fantômes
                     c'était trois écrans de peinture inutile. */}
                 {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -972,31 +926,23 @@ export function ArticleFeed({
               </div>
             ) : (
               <div className={cn('transition-opacity', refetching && 'opacity-60 pointer-events-none')}>
-                {grouped ? (
-                  <>
-                    {(() => {
-                      let cursor = 0
-                      return [...grouped.entries()].map(([dayKey, dayArticles]) => {
-                        const startIndex = cursor
-                        cursor += dayArticles.length
-                        return (
-                          <div key={dayKey} className="mb-8">
-                            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 capitalize">
-                              {formatDayHeader(dayKey)}
-                            </h2>
-                            <div className={LIST_CLASSES}>
-                              {dayArticles.map((article, i) => renderCard(article, startIndex + i))}
-                            </div>
-                          </div>
-                        )
-                      })
-                    })()}
-                  </>
-                ) : (
-                  <div className={GRID_CLASSES}>
-                    {articles.map((article, index) => renderCard(article, index))}
-                  </div>
-                )}
+                {(() => {
+                  let cursor = 0
+                  return [...grouped.entries()].map(([dayKey, dayArticles]) => {
+                    const startIndex = cursor
+                    cursor += dayArticles.length
+                    return (
+                      <section key={dayKey} className="mb-8" aria-label={formatDayHeader(dayKey)}>
+                        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                          {formatDayHeader(dayKey)}
+                        </h2>
+                        <div className={LIST_CLASSES}>
+                          {dayArticles.map((article, i) => renderCard(article, startIndex + i))}
+                        </div>
+                      </section>
+                    )
+                  })
+                })()}
                 {paginationFooter}
               </div>
             )}

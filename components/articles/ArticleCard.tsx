@@ -2,11 +2,17 @@
 
 import { memo, useRef, useLayoutEffect, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX, MapPin } from 'lucide-react'
+import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX, MapPin, Share2 } from 'lucide-react'
 import { cn, extractLocality, formatEventDateRange } from '@/lib/utils'
 import { CATEGORY_COLORS } from '@/lib/types'
 import type { FeedArticle } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
+
+/** Retour d'une action de carte (favori, partage), affiché par le conteneur. */
+export interface CardFeedback {
+  ok: boolean
+  msg: string
+}
 
 interface ArticleCardProps {
   article: FeedArticle
@@ -20,6 +26,13 @@ interface ArticleCardProps {
    * Absent = lieu affiché en simple texte (aucun feed pour porter la recherche).
    */
   onLocationSearch?: (locality: string) => void
+  /** Favori ajouté ou retiré avec succès : le conteneur tient sa liste à jour. */
+  onFavoriteToggled?: (articleId: number, favorited: boolean) => void
+  /**
+   * Messages à afficher hors de la carte : échec d'un favori, « Lien copié ». La carte
+   * n'a pas de place pour un bandeau, c'est le conteneur qui l'a.
+   */
+  onFeedback?: (feedback: CardFeedback) => void
   scrollRestoreContext?: string
   scrollRestoreCount?: number
   /** Charge l'image sans attendre le lazy-loading : à réserver à la carte du LCP. */
@@ -49,7 +62,7 @@ const CARD_IMAGE_SIZES =
 // Mémoïsé : sans ça toute la grille se re-rendait à chaque changement d'état du feed
 // (frappe dans la recherche, bandeau de feedback…), et chaque carte refait une mesure
 // DOM synchrone dans son useLayoutEffect.
-export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
+export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, onFavoriteToggled, onFeedback, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
   const categorySlug = article.category?.slug ?? ''
   const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
   const categoryIcon  = article.category?.icon || '📰'
@@ -94,6 +107,31 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
     window.sessionStorage.setItem(EXTERNAL_LINK_SCROLL_KEY, JSON.stringify(payload))
   }
 
+  /**
+   * Partage natif quand le navigateur l'offre (feuille de partage du téléphone), copie
+   * du lien sinon. C'est l'URL de la **source** qui part : c'est l'article que le
+   * destinataire veut lire, et il n'a pas besoin de l'application pour l'ouvrir.
+   */
+  async function share() {
+    const data = { title: article.title, url: article.url }
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share(data)
+      } catch (err) {
+        // Feuille de partage refermée sans choisir : ce n'est pas une erreur.
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        onFeedback?.({ ok: false, msg: 'Partage impossible.' })
+      }
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(article.url)
+      onFeedback?.({ ok: true, msg: 'Lien copié.' })
+    } catch {
+      onFeedback?.({ ok: false, msg: 'Impossible de copier le lien.' })
+    }
+  }
+
   return (
     <article className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
       {/* Image */}
@@ -132,9 +170,21 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
           )}
         </div>
 
-        {/* Title */}
+        {/*
+          Titre cliquable : c'est le premier geste d'un lecteur, et il n'aboutissait
+          qu'en trouvant la petite icône de lien externe en pied de carte. Même
+          destination, même mémorisation du scroll pour le retour.
+        */}
         <h2 className="font-semibold text-gray-900 text-base leading-snug line-clamp-2">
-          {article.title}
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={rememberScrollBeforeExternalOpen}
+            className="rounded transition-colors hover:text-brand-700 focus-ring"
+          >
+            {article.title}
+          </a>
         </h2>
 
         {/*
@@ -189,7 +239,7 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
               >
                 {expanded
                   ? <><ChevronUp className="size-3" /> Voir moins</>
-                  : <><ChevronDown className="size-3" /> Voir plus</>
+                  : <><ChevronDown className="size-3" /> Lire la suite</>
                 }
               </button>
             )}
@@ -201,8 +251,22 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
           <span className="text-xs text-gray-500 truncate">{article.source?.name}</span>
           <div className="flex items-center gap-2 shrink-0 -mr-1">
             {userId && (
-              <FavoriteButton articleId={article.id} userId={userId} initialFavorited={isFavorited} />
+              <FavoriteButton
+                articleId={article.id}
+                userId={userId}
+                initialFavorited={isFavorited}
+                onToggled={onFavoriteToggled}
+                onError={onFeedback ? (msg) => onFeedback({ ok: false, msg }) : undefined}
+              />
             )}
+            <button
+              type="button"
+              onClick={share}
+              className={cn(ACTION_BUTTON, 'text-gray-500 hover:text-brand-600 hover:bg-brand-50')}
+              aria-label="Partager"
+            >
+              <Share2 className="size-4" />
+            </button>
             {/*
               Lien simple, sans target="_blank" : sur iOS la navigation déclenche le
               flux natif « Ajouter à Calendrier » sans réellement quitter la page, et

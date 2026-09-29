@@ -70,8 +70,10 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
       ))}
 
       {/*
-        Choix d'une date précise — mobile seulement (le mini-calendrier s'en charge
-        sur desktop).
+        Choix d'une date précise, sur tous les écrans. Cette pastille était en
+        `sm:hidden` au profit d'un mini-calendrier desktop que ses deux appelants
+        avaient fini par désactiver : au-delà de 640px, aucune date précise n'était
+        atteignable. Le mini-calendrier a été retiré, la pastille reste seule.
 
         Pastille bistable, et c'est ce qui remplace la pastille × supprimée plus haut :
         une date précise n'était annulable que par elle. Au repos, un `<input type="date">`
@@ -87,13 +89,13 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
           onClick={() => onChange(null)}
           aria-pressed
           aria-label={`Retirer le filtre du ${value?.label}`}
-          className={cn(PILL_BASE, 'shrink-0 snap-start sm:hidden', PILL_ACTIVE)}
+          className={cn(PILL_BASE, PILL_ACTIVE)}
         >
           <CalendarDays className="size-4" />
           {value?.label}
         </button>
       ) : (
-        <div className="relative shrink-0 snap-start sm:hidden">
+        <div className="relative shrink-0 snap-start">
           <span aria-hidden="true" className={cn(PILL_BASE, PILL_IDLE)}>
             <CalendarDays className="size-4" />
             Date…

@@ -75,7 +75,7 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
   // routes hors ville (`/profil`, `/a-propos`).
   const firstSegment = pathname.split('/').filter(Boolean)[0]
   const citySlug =
-    firstSegment && !['profil', 'admin', 'article', 'a-propos', 'offline'].includes(firstSegment)
+    firstSegment && !['profil', 'admin', 'a-propos', 'offline'].includes(firstSegment)
       ? firstSegment
       : DEFAULT_CITY_SLUG
 
@@ -129,7 +129,12 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
                 if (event.button !== 0) return
                 event.preventDefault()
-                if (isActive) return
+                // Onglet déjà actif : remontée en haut, le geste attendu d'une barre
+                // d'onglets mobile. Avant, l'appui ne faisait strictement rien.
+                if (isActive) {
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  return
+                }
                 pushTab(tab)
                 // La navigation remontait en tête de page ; `pushState` ne le fait
                 // pas, et un onglet neuf ouvert au milieu du feed précédent paraît

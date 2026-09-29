@@ -102,8 +102,15 @@ export function CityHomePage({
   // celui que le client affiche.
   const tab: HomeTab = toHomeTab(urlTab)
 
-  // Mécanique partagée avec la barre de navigation basse : voir `pushTab`.
-  const selectTab = useCallback((next: HomeTab) => pushTab(next), [])
+  // Mécanique partagée avec la barre de navigation basse : voir `pushTab`. Un clic sur
+  // l'onglet déjà actif remonte en haut, comme dans la barre basse.
+  const selectTab = useCallback((next: HomeTab) => {
+    if (next === tab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    pushTab(next)
+  }, [tab])
 
   const isServerRenderedTab = tab === serverTab
   const isFeedTab = tab === 'actus' || tab === 'metropole'
@@ -124,8 +131,9 @@ export function CityHomePage({
         Onglets : desktop uniquement. Sur mobile, la barre de navigation basse fait le
         même travail, en fixe. Cette rangée était en `overflow-x-auto snap-x`, donc
         elle glissait sous le doigt au moindre appui-déplacé — toute cette mécanique
-        est retirée, quatre onglets — trois pour un visiteur anonyme, qui n'a pas
-        « Résumés IA » — tiennent sans déborder au-delà de 640px.
+        est retirée, quatre onglets tiennent sans déborder au-delà de 640px. Les quatre
+        sont proposés à tout le monde : « Résumés IA » affiche le dernier résumé sans
+        session.
       */}
       <div
         role="tablist"
@@ -163,8 +171,6 @@ export function CityHomePage({
           categorySlug={tab === 'metropole' ? SPOTLIGHT_SLUG : undefined}
           excludeCategorySlug={tab === 'metropole' ? undefined : SPOTLIGHT_SLUG}
           canManageContent={isAdmin}
-          hideHeader
-          hideMiniCalendar
           hideCategoryTabs={tab === 'metropole'}
           categories={categories}
           userId={userId}

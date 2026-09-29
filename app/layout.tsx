@@ -6,11 +6,11 @@ import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import Script from 'next/script'
 import './globals.css'
-import { createClient } from '@/lib/supabase/server'
-import { isAdminUser } from '@/lib/authz'
+import { getSessionIsAdmin, getSessionUser } from '@/lib/auth/session'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { BottomNav } from '@/components/layout/BottomNav'
+import { ScrollToTop } from '@/components/layout/ScrollToTop'
 import PWAInstallBanner from '@/components/layout/PWAInstallBanner'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 
@@ -40,13 +40,11 @@ export const metadata: Metadata = {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Session résolue une fois ici plutôt que redemandée en parallèle par la Navbar,
-  // la page ville et le feed.
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  // Conditionne le lien « Administration » du menu : /profil renvoie 404 aux
-  // non-administrateurs, le proposer à tous mènerait à une impasse.
-  const isAdmin = user ? await isAdminUser(supabase, user.id) : false
+  // Session et statut admin mémoïsés par requête (`lib/auth/session.ts`) : la page
+  // ville les redemande, elle obtient le même résultat sans second aller-retour.
+  // Le statut conditionne le lien « Administration » du menu : /profil renvoie 404
+  // aux non-administrateurs, le proposer à tous mènerait à une impasse.
+  const [user, isAdmin] = await Promise.all([getSessionUser(), getSessionIsAdmin()])
 
   return (
     <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
@@ -71,6 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </main>
           <Footer />
           <BottomNav isAdmin={isAdmin} />
+          <ScrollToTop />
           <PWAInstallBanner />
         </ThemeProvider>
         <Script id="sw-register" strategy="afterInteractive">{`

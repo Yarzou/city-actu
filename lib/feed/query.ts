@@ -55,6 +55,12 @@ export interface FeedQueryParams {
 export interface FeedQueryResult {
   articles: FeedArticle[]
   hasMore: boolean
+  /**
+   * Nombre total d'articles que les filtres retiennent, toutes pages confondues.
+   * Null si PostgREST ne l'a pas renvoyé. Sert au compteur affiché au-dessus de la
+   * liste — sans lui, rien ne disait combien un filtre avait retenu.
+   */
+  total: number | null
   error: Error | null
 }
 
@@ -109,9 +115,12 @@ export async function queryArticles(
   supabase: SupabaseClient,
   { context, range, horizon, search, offset, limit }: FeedQueryParams
 ): Promise<FeedQueryResult> {
+  // `count: 'exact'` : le total voyage dans l'en-tête `Content-Range` de la même
+  // réponse, sans requête supplémentaire. Sur une table de quelques milliers de
+  // lignes déjà filtrée par ville, le comptage est négligeable.
   let query = supabase
     .from('articles')
-    .select(FEED_SELECT)
+    .select(FEED_SELECT, { count: 'exact' })
     .eq('city_id', context.cityId)
     .eq('is_duplicate', false)
 
@@ -149,13 +158,13 @@ export async function queryArticles(
   // s'il reste quelque chose sans recourir à un COUNT. L'ancien test
   // `results.length === requestedSize` affichait « Voir plus » à tort dès que la
   // dernière page tombait pile sur la taille demandée, et le clic ne ramenait rien.
-  const { data, error } = await query
+  const { data, error, count } = await query
     .order('published_at', { ascending: true, nullsFirst: false })
     .order('fetched_at', { ascending: false })
     .range(offset, offset + limit)
 
   if (error) {
-    return { articles: [], hasMore: false, error: new Error(error.message) }
+    return { articles: [], hasMore: false, total: null, error: new Error(error.message) }
   }
 
   // PostgREST type les jointures « vers-un » comme des tableaux ; `source` et
@@ -165,6 +174,7 @@ export async function queryArticles(
   return {
     articles: fetched.slice(0, limit),
     hasMore: fetched.length > limit,
+    total: typeof count === 'number' ? count : null,
     error: null,
   }
 }

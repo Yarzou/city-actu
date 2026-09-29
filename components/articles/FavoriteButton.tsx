@@ -9,22 +9,36 @@ interface FavoriteButtonProps {
   articleId: number
   userId: string
   initialFavorited: boolean
+  /** Appelé après une écriture **réussie** : l'appelant tient sa propre liste à jour. */
+  onToggled?: (articleId: number, favorited: boolean) => void
+  /** Échec d'écriture : le message est à afficher, le bouton n'a pas changé d'état. */
+  onError?: (message: string) => void
 }
 
-export function FavoriteButton({ articleId, userId, initialFavorited }: FavoriteButtonProps) {
+export function FavoriteButton({ articleId, userId, initialFavorited, onToggled, onError }: FavoriteButtonProps) {
   const [favorited, setFavorited] = useState(initialFavorited)
   const [loading, setLoading]     = useState(false)
 
   async function toggle() {
     setLoading(true)
     const supabase = createClient()
-    if (favorited) {
-      await supabase.from('user_favorites').delete().match({ user_id: userId, article_id: articleId })
-    } else {
-      await supabase.from('user_favorites').insert({ user_id: userId, article_id: articleId })
-    }
-    setFavorited(!favorited)
+    // L'ancien code basculait le cœur sans lire `error` : une RLS qui refuse, une
+    // session expirée ou une coupure réseau laissaient un favori affiché mais jamais
+    // enregistré, et l'onglet Favoris ne le montrait pas — sans rien pour comprendre.
+    const { error } = favorited
+      ? await supabase.from('user_favorites').delete().match({ user_id: userId, article_id: articleId })
+      : await supabase.from('user_favorites').insert({ user_id: userId, article_id: articleId })
     setLoading(false)
+
+    if (error) {
+      console.error('[Favoris] écriture impossible:', error)
+      onError?.(favorited ? 'Impossible de retirer ce favori.' : "Impossible d'ajouter ce favori.")
+      return
+    }
+
+    const next = !favorited
+    setFavorited(next)
+    onToggled?.(articleId, next)
   }
 
   // `aria-label` et non `title` : l'infobulle ne s'affiche jamais au toucher et n'est

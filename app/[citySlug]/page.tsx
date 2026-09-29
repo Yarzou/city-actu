@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { isAdminUser } from '@/lib/authz'
+import { getSessionIsAdmin, getSessionUser } from '@/lib/auth/session'
 import { resolveFeedContext, queryArticles, type FeedContext } from '@/lib/feed/query'
 import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
@@ -13,7 +13,7 @@ import { fetchLatestDigest } from '@/lib/digest/latest'
 import { fetchLastFetchAt } from '@/lib/feed/last-update'
 import { CityHomePage } from '@/components/articles/CityHomePage'
 import { ArticleFeed } from '@/components/articles/ArticleFeed'
-import { SkeletonCard } from '@/components/articles/SkeletonCard'
+import { FeedSkeleton } from '@/components/articles/FeedSkeleton'
 import type { Category } from '@/lib/types'
 
 const PAGE_SIZE = 20
@@ -59,13 +59,13 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   const supabase = await createClient()
 
   // Étage 1 — la coquille. Deux requêtes courtes seulement : sans elles on ne peut ni
-  // titrer la page ni dessiner les pastilles. Tout le reste part en streaming.
-  const [{ data: categories }, { data: auth }] = await Promise.all([
+  // titrer la page ni dessiner les pastilles. Tout le reste part en streaming. La
+  // session vient du cache par requête (`lib/auth/session.ts`), déjà rempli par le
+  // layout racine : aucun second aller-retour vers le serveur Auth.
+  const [{ data: categories }, user] = await Promise.all([
     supabase.from('categories').select('*').order('display_order').order('name'),
-    supabase.auth.getUser(),
+    getSessionUser(),
   ])
-
-  const user = auth?.user ?? null
 
   // Tous les onglets sont proposables à tout le monde : « Résumés IA » affiche le
   // dernier résumé enregistré même sans session (voir `lib/feed/tabs.ts`). L'onglet ne
@@ -98,7 +98,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
       isSpotlight ? [SPOTLIGHT_SLUG] : selectedCategories,
       isSpotlight ? undefined : SPOTLIGHT_SLUG
     ),
-    user ? isAdminUser(supabase, user.id) : Promise.resolve(false),
+    getSessionIsAdmin(),
     tab === 'ia' ? fetchLatestDigest(supabase, citySlug) : Promise.resolve(null),
   ])
 
@@ -152,28 +152,6 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
         </Suspense>
       )}
     </CityHomePage>
-  )
-}
-
-/**
- * Squelette du seul bloc encore en attente : la liste et ses filtres.
- *
- * Le conteneur reprend exactement celui d'`ArticleFeed` — sans ça, le contenu se
- * décale horizontalement au moment où le vrai feed remplace le squelette.
- */
-function FeedSkeleton() {
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" aria-hidden="true">
-      <div className="mb-3 h-12 rounded-xl bg-gray-100 animate-pulse" />
-      <div className="mb-6 flex gap-2 overflow-hidden">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-11 w-28 shrink-0 rounded-full bg-gray-100 animate-pulse" />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
-      </div>
-    </div>
   )
 }
 
@@ -231,8 +209,6 @@ async function FeedSlot({
       categorySlug={isSpotlight ? SPOTLIGHT_SLUG : undefined}
       excludeCategorySlug={isSpotlight ? undefined : SPOTLIGHT_SLUG}
       canManageContent={isAdmin}
-      hideHeader
-      hideMiniCalendar
       hideCategoryTabs={isSpotlight}
       categories={categories}
       userId={userId}
@@ -240,6 +216,7 @@ async function FeedSlot({
       horizon={horizon}
       initialArticles={feed.articles}
       initialHasMore={feed.hasMore}
+      initialTotal={feed.total}
       initialError={feed.error ? feed.error.message : null}
       initialFavorites={favorites}
       initialRange={serializeRangeBounds(range)}
