@@ -29,6 +29,7 @@ const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   date_selector: '',
   end_date_selector: '',
   location_selector: '',
+  location_default: '',
   detail_date_selector: '',
   base_url: '',
 }
@@ -221,6 +222,7 @@ export function AdminSourcesPanel() {
       date_selector: cfg.date_selector ?? '',
       end_date_selector: cfg.end_date_selector ?? '',
       location_selector: cfg.location_selector ?? '',
+      location_default: cfg.location_default ?? '',
       detail_date_selector: cfg.detail_date_selector ?? '',
       base_url: cfg.base_url ?? '',
     })
@@ -1471,6 +1473,15 @@ function ScrapingConfigFields({
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
             placeholder='.lieu, [itemprop="location"]' />
         </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Lieu fixe <span className="text-gray-400 font-normal">(si tous les événements ont lieu au même endroit)</span>
+          </label>
+          <input value={config.location_default ?? ''}
+            onChange={e => onChange({ ...config, location_default: e.target.value })}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+            placeholder="Salle, Ville" />
+        </div>
         <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Sélecteur date sur page détail
@@ -1505,6 +1516,7 @@ function buildScrapingConfig(c: ScrapingConfig): ScrapingConfig {
   if (c.end_date_selector)       config.end_date_selector       = c.end_date_selector
   if (c.detail_date_selector)    config.detail_date_selector    = c.detail_date_selector
   if (c.location_selector)       config.location_selector       = c.location_selector
+  if (c.location_default)        config.location_default        = c.location_default
   if (c.base_url)                config.base_url                = c.base_url
   return config
 }

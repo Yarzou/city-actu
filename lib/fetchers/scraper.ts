@@ -227,7 +227,10 @@ export async function fetchScrapingSource(source: Source): Promise<FetchedItem[]
       const published_at = dateText ? parseFrenchDate(dateText) : null
       const event_end_date = endDateText ? parseFrenchDate(endDateText) : null
 
-      const location = locationEl?.text().replace(/\s+/g, ' ').trim().slice(0, 200) || null
+      const location =
+        locationEl?.text().replace(/\s+/g, ' ').trim().slice(0, 200) ||
+        config.location_default?.trim().slice(0, 200) ||
+        null
 
       items.push({ title, url, content_preview: content, image_url: image, published_at, event_end_date, location })
     })

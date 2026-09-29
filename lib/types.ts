@@ -54,6 +54,11 @@ export interface ScrapingConfig {
   end_date_selector?: string
   // Lieu de l'événement, repris dans le champ LOCATION des exports .ics.
   location_selector?: string
+  // Lieu fixe, pour une source dont tous les événements ont lieu au même endroit
+  // (salle, parc des expositions) et dont la liste ne l'affiche pas. Repli seulement :
+  // un lieu lu par `location_selector` l'emporte. Garder « salle, ville » — la
+  // commune, dernier segment, est ce que la carte rend cliquable (`extractLocality`).
+  location_default?: string
   detail_date_selector?: string
   base_url?: string
   // Optional case-insensitive regex: only keep items whose title matches.
