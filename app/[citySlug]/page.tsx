@@ -3,9 +3,10 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionIsAdmin, getSessionUser } from '@/lib/auth/session'
-import { resolveFeedContext, queryArticles, type FeedContext } from '@/lib/feed/query'
+import { resolveFeedContext, queryArticles, queryMonthEvents, type FeedContext } from '@/lib/feed/query'
 import { parisHorizonISO } from '@/lib/feed/paris-time'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
+import { monthBounds, parseMonthParam, parseViewParam, serializeMonth, type CivilMonth, type FeedView } from '@/lib/feed/view-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
 import { normalizeSearchText } from '@/lib/utils'
 import { SPOTLIGHT_SLUG, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
@@ -107,8 +108,12 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
   if (!context) notFound()
 
   const search = normalizeSearchText(readParam(searchParams.q))
-  const range = parseDateParam(searchParams.d)
   const horizon = parisHorizonISO()
+  // Mode d'affichage : en vue mensuelle, la plage de dates n'a pas de sens et c'est le
+  // mois qui est lu. Le squelette prend la forme de ce qui va le remplacer.
+  const view = parseViewParam(searchParams.v)
+  const month = parseMonthParam(searchParams.m)
+  const range = view === 'mois' ? null : parseDateParam(searchParams.d)
 
   // Les onglets Favoris et Résumés IA ont leur propre chargement : pas de slot de feed
   // à préparer pour eux.
@@ -135,7 +140,7 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
         // Étage 2 — la liste. La coquille est déjà envoyée au navigateur pendant que
         // cette requête tourne ; avant, la page entière attendait son résultat avant
         // d'émettre le moindre octet de HTML.
-        <Suspense fallback={<FeedSkeleton />}>
+        <Suspense fallback={<FeedSkeleton view={view} />}>
           <FeedSlot
             citySlug={citySlug}
             context={context}
@@ -143,6 +148,8 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
             userId={user?.id ?? null}
             isAdmin={isAdmin}
             horizon={horizon}
+            view={view}
+            month={month}
             range={range}
             search={search}
             rawSearch={readParam(searchParams.q)}
@@ -162,6 +169,8 @@ interface FeedSlotProps {
   userId: string | null
   isAdmin: boolean
   horizon: string
+  view: FeedView
+  month: CivilMonth
   range: DateRange | null
   search: string
   rawSearch: string
@@ -176,6 +185,8 @@ async function FeedSlot({
   userId,
   isAdmin,
   horizon,
+  view,
+  month,
   range,
   search,
   rawSearch,
@@ -183,16 +194,24 @@ async function FeedSlot({
   isSpotlight,
 }: FeedSlotProps) {
   const supabase = await createClient()
+  const bounds = monthBounds(month)
 
-  const [feed, favorites, lastFetchAt] = await Promise.all([
-    queryArticles(supabase, {
-      context,
-      range: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
-      horizon,
-      search,
-      offset: 0,
-      limit: PAGE_SIZE,
-    }),
+  // Une seule des deux requêtes part : celle du mode demandé. L'autre lot sera chargé
+  // par le client au premier passage sur l'autre mode, s'il a lieu.
+  const [feed, monthResult, favorites, lastFetchAt] = await Promise.all([
+    view === 'liste'
+      ? queryArticles(supabase, {
+          context,
+          range: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
+          horizon,
+          search,
+          offset: 0,
+          limit: PAGE_SIZE,
+        })
+      : Promise.resolve(null),
+    view === 'mois'
+      ? queryMonthEvents(supabase, { context, start: bounds.start.toISOString(), end: bounds.end.toISOString(), search })
+      : Promise.resolve(null),
     userId
       ? supabase
           .from('user_favorites')
@@ -214,15 +233,20 @@ async function FeedSlot({
       userId={userId}
       feedContext={context}
       horizon={horizon}
-      initialArticles={feed.articles}
-      initialHasMore={feed.hasMore}
-      initialTotal={feed.total}
-      initialError={feed.error ? feed.error.message : null}
+      initialArticles={feed?.articles ?? []}
+      initialHasMore={feed?.hasMore ?? false}
+      initialTotal={feed?.total ?? null}
+      initialError={feed?.error ? feed.error.message : null}
       initialFavorites={favorites}
       initialRange={serializeRangeBounds(range)}
       initialSearch={rawSearch}
       initialCategories={selectedCategories}
       lastFetchAt={lastFetchAt}
+      initialView={view}
+      initialMonth={serializeMonth(month)}
+      // Null en cas d'échec : le feed relance la lecture au montage et affiche l'erreur
+      // si elle persiste, plutôt qu'une grille vide présentée comme un mois sans rien.
+      initialMonthEvents={monthResult && !monthResult.error ? monthResult.events : null}
     />
   )
 }

@@ -65,6 +65,29 @@ export interface FeedQueryResult {
 }
 
 /**
+ * La vue mensuelle lit les **mêmes colonnes** que la liste : ce sont les cartes du feed
+ * qui y sont redisposées par jour, avec toutes leurs actions. Une sélection allégée
+ * avait été envisagée pour une grille de puces ; elle aurait privé le mois des favoris,
+ * du partage et de l'export calendrier.
+ */
+/** Garde-fou : un mois d'agenda métropolitain tient largement en dessous. */
+export const MONTH_LIMIT = 500
+
+export interface MonthQueryParams {
+  context: FeedContext
+  /** Bornes ISO du mois (voir `monthBounds`). */
+  start: string
+  end: string
+  /** Texte déjà normalisé par `normalizeSearchText`. */
+  search: string
+}
+
+export interface MonthQueryResult {
+  events: FeedArticle[]
+  error: Error | null
+}
+
+/**
  * Résout ville et catégories en une seule vague. Retourne null si la ville n'existe
  * pas — l'appelant en fait un `notFound()` côté serveur.
  *
@@ -111,6 +134,58 @@ export async function resolveFeedContext(
   }
 }
 
+/**
+ * `location_search` (migration 021) entre dans le OU au même titre que le titre et la
+ * description : c'est ce qui fait qu'un clic sur la commune d'une carte remonte les
+ * événements qui s'y déroulent, et non les seuls articles qui la citent — sur fest.fr
+ * le titre est « Concert de… » et la commune ne vit que dans `location`. Effet de bord
+ * assumé sur la recherche au clavier : taper « Nantes » remonte aussi ce qui a lieu à
+ * Nantes.
+ */
+function searchClause(search: string): string {
+  const searchPattern = search.split(' ').filter(Boolean).join('%')
+  return `title_search.ilike.%${searchPattern}%,content_preview_search.ilike.%${searchPattern}%,location_search.ilike.%${searchPattern}%`
+}
+
+/**
+ * Tous les événements dont la plage **touche** le mois : commencés avant et pas finis,
+ * ou commençant dedans. Les articles sans date sont exclus — ce ne sont pas des
+ * événements, ils vivent dans la liste sous « Sans date ».
+ *
+ * Deux `.or()` successifs sont combinés en ET par PostgREST : la fenêtre et la
+ * recherche s'appliquent ensemble, comme dans `queryArticles`.
+ */
+export async function queryMonthEvents(
+  supabase: SupabaseClient,
+  { context, start, end, search }: MonthQueryParams
+): Promise<MonthQueryResult> {
+  let query = supabase
+    .from('articles')
+    .select(FEED_SELECT)
+    .eq('city_id', context.cityId)
+    .eq('is_duplicate', false)
+
+  if (context.categoryIds.length > 0) {
+    query = query.in('category_id', context.categoryIds)
+  } else if (context.excludeCategoryId !== null) {
+    query = query.neq('category_id', context.excludeCategoryId)
+  }
+
+  query = query
+    .not('published_at', 'is', null)
+    .lte('published_at', end)
+    .or(`event_end_date.gte.${start},published_at.gte.${start}`)
+
+  if (search) query = query.or(searchClause(search))
+
+  const { data, error } = await query
+    .order('published_at', { ascending: true })
+    .limit(MONTH_LIMIT)
+
+  if (error) return { events: [], error: new Error(error.message) }
+  return { events: (data ?? []) as unknown as FeedArticle[], error: null }
+}
+
 export async function queryArticles(
   supabase: SupabaseClient,
   { context, range, horizon, search, offset, limit }: FeedQueryParams
@@ -141,18 +216,7 @@ export async function queryArticles(
     )
   }
 
-  if (search) {
-    const searchPattern = search.split(' ').filter(Boolean).join('%')
-    // `location_search` (migration 021) entre dans le OU au même titre que le titre et
-    // la description : c'est ce qui fait qu'un clic sur la commune d'une carte remonte
-    // les événements qui s'y déroulent, et non les seuls articles qui la citent — sur
-    // fest.fr le titre est « Concert de… » et la commune ne vit que dans `location`.
-    // Effet de bord assumé sur la recherche au clavier : taper « Nantes » remonte
-    // désormais aussi ce qui a lieu à Nantes.
-    query = query.or(
-      `title_search.ilike.%${searchPattern}%,content_preview_search.ilike.%${searchPattern}%,location_search.ilike.%${searchPattern}%`
-    )
-  }
+  if (search) query = query.or(searchClause(search))
 
   // On demande un élément de plus que nécessaire : c'est ce qui permet de savoir
   // s'il reste quelque chose sans recourir à un COUNT. L'ancien test

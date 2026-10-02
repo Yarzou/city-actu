@@ -2,14 +2,16 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ChevronDown, Search, TriangleAlert, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, List as ListIcon, Search, TriangleAlert, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
-import { queryArticles, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
+import { MonthNav, MonthView } from './MonthView'
+import { queryArticles, queryMonthEvents, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
 import { fetchLastFetchAt } from '@/lib/feed/last-update'
-import { parisHorizonISO, formatParisDateTime } from '@/lib/feed/paris-time'
+import { parisHorizonISO, formatParisDateTime, parisCivilDate } from '@/lib/feed/paris-time'
+import { parisDateISO } from '@/lib/fetchers/dates'
 import {
   deserializeRangeBounds,
   parseDateParam,
@@ -17,6 +19,19 @@ import {
   type DateRange,
   type SerializedDateRange,
 } from '@/lib/feed/date-params'
+import {
+  currentCivilMonth,
+  formatMonthLabel,
+  monthBounds,
+  parseMonthParam,
+  parseViewParam,
+  serializeMonth,
+  serializeMonthParam,
+  serializeViewParam,
+  type CivilMonth,
+  type FeedView,
+} from '@/lib/feed/view-params'
+import { buildMonthGrid, buildMonthSections } from '@/lib/feed/month-grid'
 import {
   parseCategoryParam,
   serializeCategoryParam,
@@ -48,7 +63,9 @@ function buildScrollContext(
   citySlug: string,
   categorySlugs: string[],
   range?: DateRange | null,
-  searchTerm = ''
+  searchTerm = '',
+  view: FeedView = 'liste',
+  month?: CivilMonth
 ) {
   // Les slugs arrivent déjà triés (voir serializeCategoryParam) : sans ça,
   // « sports,agenda » et « agenda,sports » produiraient deux clés pour le même feed.
@@ -56,7 +73,17 @@ function buildScrollContext(
   const from = range?.from ? range.from.toISOString() : 'none'
   const to = range?.to ? range.to.toISOString() : 'none'
   const search = searchTerm || 'none'
-  return `${citySlug}|${category}|${from}|${to}|${search}`
+  const mode = view === 'mois' && month ? `mois:${serializeMonth(month)}` : 'liste'
+  return `${citySlug}|${category}|${from}|${to}|${search}|${mode}`
+}
+
+/** Clé d'un lot chargé : évite de relancer une requête identique au retour sur un mode. */
+function listKey(range: DateRange | null, search: string, categorySlugs: string[]) {
+  return `${serializeDateRange(range) ?? ''}|${search}|${categorySlugs.join(',')}`
+}
+
+function monthKey(month: CivilMonth, search: string, categorySlugs: string[]) {
+  return `${serializeMonth(month)}|${search}|${categorySlugs.join(',')}`
 }
 
 function readExternalScrollSnapshot(): ExternalLinkScrollSnapshot | null {
@@ -131,6 +158,15 @@ interface ArticleFeedProps {
   initialCategories?: string[]
   /** Dernière collecte des sources (ISO), affichée au-dessus de la recherche. */
   lastFetchAt?: string | null
+  /**
+   * Vue mensuelle préparée par le serveur (`?v=mois`). Absent : lu depuis l'URL.
+   * Quand `initialMonthEvents` est fourni, `initialArticles` est un tableau vide et la
+   * liste n'est chargée qu'au premier passage en mode liste.
+   */
+  initialView?: FeedView
+  /** `YYYY-MM` du mois rendu par le serveur. */
+  initialMonth?: string
+  initialMonthEvents?: FeedArticle[] | null
 }
 
 export function ArticleFeed({
@@ -152,12 +188,19 @@ export function ArticleFeed({
   initialSearch = '',
   initialCategories,
   lastFetchAt = null,
+  initialView,
+  initialMonth,
+  initialMonthEvents = null,
 }: ArticleFeedProps) {
   const isHydrated = initialArticles !== null && Boolean(feedContext)
 
   // Lu tôt : la sélection de catégories s'initialise depuis l'URL quand le serveur ne
   // l'a pas fournie (cas d'un changement d'onglet côté client).
   const searchParams = useSearchParams()
+
+  // Mode d'affichage et mois : du serveur quand il les a préparés, sinon de l'URL.
+  const startView: FeedView = initialView ?? parseViewParam(searchParams.get('v') ?? undefined)
+  const startMonth: CivilMonth = parseMonthParam(initialMonth ?? searchParams.get('m') ?? undefined)
 
   const [articles, setArticles] = useState<FeedArticle[]>(initialArticles ?? [])
   const [categories, setCategories] = useState<CategoryType[]>(categoryList ?? [])
@@ -187,6 +230,36 @@ export function ArticleFeed({
   )
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
+
+  // ─── Vue mensuelle ────────────────────────────────────────────────────────────
+  // Un mode du feed, pas un onglet (voir `lib/feed/view-params.ts`). Les cartes du
+  // mois sont gardées avec la clé du mois qu'elles décrivent : au changement de mois, la
+  // vue se vide le temps de la requête plutôt que d'afficher les cartes d'un autre mois
+  // sous le nouveau libellé.
+  const [view, setView] = useState<FeedView>(startView)
+  const [month, setMonth] = useState<CivilMonth>(startMonth)
+  const [monthData, setMonthData] = useState<{ key: string; events: FeedArticle[] } | null>(
+    initialMonthEvents ? { key: serializeMonth(startMonth), events: initialMonthEvents } : null
+  )
+  const [monthLoading, setMonthLoading] = useState(false)
+  const [monthError, setMonthError] = useState<string | null>(null)
+  const viewRef = useRef<FeedView>(startView)
+  const monthRef = useRef<CivilMonth>(startMonth)
+  // Clés des lots déjà chargés, pour ne pas requêter deux fois la même chose en
+  // basculant Liste → Mois → Liste. Null = jamais chargé dans cette session.
+  const listKeyRef = useRef<string | null>(
+    isHydrated && startView === 'liste'
+      ? listKey(deserializeRangeBounds(initialRange), normalizeSearchText(initialSearch), initialCategories ?? [])
+      : null
+  )
+  const monthKeyRef = useRef<string | null>(
+    initialMonthEvents ? monthKey(startMonth, normalizeSearchText(initialSearch), initialCategories ?? []) : null
+  )
+  const monthGenerationRef = useRef(0)
+  // Calculés une fois : la date civile de Paris est la même des deux côtés, sauf à
+  // cheval sur minuit.
+  const todayKey = useMemo(() => parisDateISO(new Date()), [])
+  const currentMonth = useMemo(() => currentCivilMonth(), [])
   // En état et non en simple prop : sur un onglet atteint côté client, le serveur ne
   // prépare pas cette date (prop `lastFetchAt`) et le feed la lit lui-même au montage.
   const [lastFetch, setLastFetch] = useState<string | null>(lastFetchAt)
@@ -209,8 +282,8 @@ export function ArticleFeed({
   const [autoLoads, setAutoLoads] = useState(0)
 
   const scrollContext = useMemo(
-    () => buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery),
-    [citySlug, categorySlug, selectedCategories, dateRange, searchQuery]
+    () => buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery, view, month),
+    [citySlug, categorySlug, selectedCategories, dateRange, searchQuery, view, month]
   )
 
   // Formaté en Europe/Paris (voir formatParisDateTime) : la chaîne est produite côté
@@ -227,12 +300,16 @@ export function ArticleFeed({
   const urlDate = searchParams.get('d') ?? ''
   const urlSearch = searchParams.get('q') ?? ''
   const urlCategories = searchParams.get('cat') ?? ''
+  const urlView = searchParams.get('v') ?? ''
+  const urlMonth = searchParams.get('m') ?? ''
   // Dernier état que *nous* avons appliqué. Une divergence signifie que l'URL a
   // bougé sans nous — c'est-à-dire un retour ou une avance dans l'historique.
   const appliedUrlRef = useRef({
     d: serializeDateRange(deserializeRangeBounds(initialRange)) ?? '',
     q: initialSearch,
     cat: serializeCategoryParam(initialCategories ?? parseCategoryParam(urlCategories, categoryList ?? [])) ?? '',
+    v: urlView,
+    m: urlMonth,
   })
   // Dernière valeur de recherche déjà répercutée en requête. Distincte de l'état :
   // le débounce fait passer `searchQuery` par la même valeur au montage, et sans ce
@@ -240,12 +317,12 @@ export function ArticleFeed({
   const searchSyncedRef = useRef(normalizeSearchText(initialSearch))
 
   const writeUrl = useCallback(
-    (next: { d: string; q: string; cat: string }, mode: 'push' | 'replace') => {
+    (next: { d: string; q: string; cat: string; v: string; m: string }, mode: 'push' | 'replace') => {
       if (typeof window === 'undefined') return
       appliedUrlRef.current = next
 
       const params = new URLSearchParams(window.location.search)
-      for (const [key, value] of [['d', next.d], ['q', next.q], ['cat', next.cat]] as const) {
+      for (const [key, value] of [['d', next.d], ['q', next.q], ['cat', next.cat], ['v', next.v], ['m', next.m]] as const) {
         if (value) params.set(key, value)
         else params.delete(key)
       }
@@ -278,6 +355,18 @@ export function ArticleFeed({
       .filter((id): id is number => typeof id === 'number')
   }, [])
 
+  /**
+   * Mode « catégorie unique fixe » (onglet mis en avant) : le contexte du serveur fait
+   * foi, la sélection de pastilles n'existe pas dans ce mode. Sinon la sélection
+   * remplace les catégories du contexte, et une sélection explicite rend l'exclusion
+   * sans objet : la catégorie mise en avant ne figure pas dans les pastilles.
+   */
+  const effectiveContextFor = useCallback((context: FeedContext, categorySlugs: string[]): FeedContext => {
+    if (categorySlug) return context
+    const ids = resolveCategoryIds(categorySlugs)
+    return { ...context, categoryIds: ids, excludeCategoryId: ids.length > 0 ? null : context.excludeCategoryId }
+  }, [categorySlug, resolveCategoryIds])
+
   const runQuery = useCallback(
     async (opts: {
       reset: boolean
@@ -296,23 +385,10 @@ export function ArticleFeed({
 
       // Un reset ouvre une nouvelle génération ; une pagination reste dans la courante.
       const generation = reset ? ++generationRef.current : generationRef.current
-
-      // Mode « catégorie unique fixe » (onglet mis en avant) : le contexte du serveur
-      // fait foi, la sélection de pastilles n'existe pas dans ce mode.
-      let effectiveContext = context
-      if (!categorySlug) {
-        const ids = resolveCategoryIds(categorySlugs)
-        effectiveContext = {
-          ...context,
-          categoryIds: ids,
-          // Une sélection explicite rend l'exclusion sans objet : la catégorie mise en
-          // avant ne figure pas dans les pastilles, donc pas dans la sélection.
-          excludeCategoryId: ids.length > 0 ? null : context.excludeCategoryId,
-        }
-      }
+      if (reset) listKeyRef.current = listKey(range, search, categorySlugs)
 
       const result = await queryArticles(supabase, {
-        context: effectiveContext,
+        context: effectiveContextFor(context, categorySlugs),
         range: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
         horizon: horizonRef.current,
         search,
@@ -344,7 +420,39 @@ export function ArticleFeed({
       offsetRef.current = currentOffset + result.articles.length
       setOffset(offsetRef.current)
     },
-    [categorySlug, resolveCategoryIds]
+    [effectiveContextFor]
+  )
+
+  /**
+   * Charge les événements d'un mois. Son propre jeton de génération : un mois abandonné
+   * (deux clics rapides sur la flèche) ne doit pas écraser le mois affiché.
+   */
+  const loadMonth = useCallback(
+    async (target: CivilMonth, search: string, categorySlugs: string[]) => {
+      const context = contextRef.current
+      if (!context) return
+
+      const generation = ++monthGenerationRef.current
+      setMonthLoading(true)
+      const { start, end } = monthBounds(target)
+      const result = await queryMonthEvents(createClient(), {
+        context: effectiveContextFor(context, categorySlugs),
+        start: start.toISOString(),
+        end: end.toISOString(),
+        search,
+      })
+      if (generation !== monthGenerationRef.current) return
+
+      setMonthLoading(false)
+      if (result.error) {
+        setMonthError(result.error.message)
+        return
+      }
+      setMonthError(null)
+      setMonthData({ key: serializeMonth(target), events: result.events })
+      monthKeyRef.current = monthKey(target, search, categorySlugs)
+    },
+    [effectiveContextFor]
   )
 
   /**
@@ -353,6 +461,10 @@ export function ArticleFeed({
    * Les faire bouger séparément est ce qui rendait `resetFilters` faux — il posait
    * `searchInput` à vide puis appelait le gestionnaire de date, qui réécrivait
    * l'URL avec l'ancienne valeur de recherche capturée dans sa closure.
+   *
+   * Le mode d'affichage et le mois sont lus dans leurs refs : ils changent par
+   * `switchView` / `changeMonth`, qui les posent **avant** d'appeler ici. En mode mois,
+   * la plage de dates n'a pas de sens et reste vide.
    */
   const applyFilters = useCallback(
     (
@@ -363,8 +475,11 @@ export function ArticleFeed({
     ) => {
       const normalized = normalizeSearchText(searchText)
       const canonicalCategories = [...new Set(categorySlugs)].sort()
+      const currentView = viewRef.current
+      const currentMonthValue = monthRef.current
+      const effectiveRange = currentView === 'mois' ? null : range
 
-      setDateRange(range)
+      setDateRange(effectiveRange)
       setSearchInput(searchText)
       setSearchQuery(normalized)
       setSelectedCategories(canonicalCategories)
@@ -372,18 +487,31 @@ export function ArticleFeed({
       setOffset(0)
       writeUrl(
         {
-          d: serializeDateRange(range) ?? '',
+          d: serializeDateRange(effectiveRange) ?? '',
           q: searchText,
           cat: serializeCategoryParam(canonicalCategories) ?? '',
+          v: serializeViewParam(currentView) ?? '',
+          m: currentView === 'mois' ? (serializeMonthParam(currentMonthValue) ?? '') : '',
         },
         mode
       )
 
-      setRefetching(true)
-      void runQuery({ reset: true, range, search: normalized, categorySlugs: canonicalCategories })
-        .finally(() => setRefetching(false))
+      if (currentView === 'mois') {
+        if (monthKeyRef.current === monthKey(currentMonthValue, normalized, canonicalCategories)) return
+        void loadMonth(currentMonthValue, normalized, canonicalCategories)
+        return
+      }
+
+      if (listKeyRef.current === listKey(effectiveRange, normalized, canonicalCategories)) return
+      // Première liste de la session (le serveur avait rendu le mois) : squelettes et
+      // non liste atténuée, il n'y a encore rien à atténuer.
+      const firstFill = listKeyRef.current === null
+      if (firstFill) setLoading(true)
+      else setRefetching(true)
+      void runQuery({ reset: true, range: effectiveRange, search: normalized, categorySlugs: canonicalCategories })
+        .finally(() => { setLoading(false); setRefetching(false) })
     },
-    [runQuery, writeUrl]
+    [runQuery, loadMonth, writeUrl]
   )
 
   // Débounce de la recherche.
@@ -401,7 +529,7 @@ export function ArticleFeed({
 
     async function init() {
       const snapshot = readExternalScrollSnapshot()
-      const initialContext = buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery)
+      const initialContext = buildScrollContext(citySlug, categorySlug ? [categorySlug] : selectedCategories, dateRange, searchQuery, view, month)
       const hasValidExternalReturn =
         Boolean(snapshot?.pendingExternalReturn) &&
         snapshot?.context === initialContext &&
@@ -416,7 +544,13 @@ export function ArticleFeed({
 
       if (isHydrated) {
         hasInitializedRef.current = true
-        if (hasValidExternalReturn && requestedCount > (initialArticles?.length ?? 0)) {
+        // Le serveur a rendu la coquille en mode mois mais la lecture du mois a échoué :
+        // on la retente ici, c'est l'erreur qui s'affichera si elle persiste.
+        if (view === 'mois' && monthData === null) {
+          void loadMonth(month, searchQuery, selectedCategories)
+          return
+        }
+        if (view === 'liste' && hasValidExternalReturn && requestedCount > (initialArticles?.length ?? 0)) {
           setRefetching(true)
           await runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount })
           setRefetching(false)
@@ -447,7 +581,9 @@ export function ArticleFeed({
       contextRef.current = context
 
       await Promise.all([
-        runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount }),
+        view === 'mois'
+          ? loadMonth(month, searchQuery, selectedCategories)
+          : runQuery({ reset: true, range: dateRange, search: searchQuery, categorySlugs: selectedCategories, targetCount: requestedCount }),
         // La date de dernière collecte est une propriété de la **ville**, pas du feed :
         // elle doit s'afficher sur « Autour de la Chap' » comme sur « Actus ». Le
         // serveur ne la prépare que pour l'onglet qu'il rend (prop `lastFetchAt`) ;
@@ -489,8 +625,18 @@ export function ArticleFeed({
     if (
       urlDate === appliedUrlRef.current.d &&
       urlSearch === appliedUrlRef.current.q &&
-      urlCategories === appliedUrlRef.current.cat
+      urlCategories === appliedUrlRef.current.cat &&
+      urlView === appliedUrlRef.current.v &&
+      urlMonth === appliedUrlRef.current.m
     ) return
+
+    // Mode et mois d'abord, dans les refs que `applyFilters` lit.
+    const nextView = parseViewParam(urlView || undefined)
+    const nextMonth = parseMonthParam(urlMonth || undefined)
+    viewRef.current = nextView
+    monthRef.current = nextMonth
+    setView(nextView)
+    setMonth(nextMonth)
 
     // `replace` : l'entrée d'historique visée existe déjà, on ne fait que la rejouer.
     applyFilters(
@@ -500,7 +646,7 @@ export function ArticleFeed({
       'replace'
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlDate, urlSearch, urlCategories])
+  }, [urlDate, urlSearch, urlCategories, urlView, urlMonth])
 
   // ─── Restauration de scroll au retour d'un lien externe ───────────────────────
   useEffect(() => {
@@ -539,7 +685,10 @@ export function ArticleFeed({
       clearExternalScrollSnapshot()
       return
     }
-    if (articles.length < Math.max(PAGE_SIZE, snapshot.expectedCount ?? PAGE_SIZE)) return
+    // En liste, attendre que toute la longueur parcourue soit rematérialisée ; en mode
+    // mois la grille a sa hauteur dès le premier rendu.
+    if (view === 'liste' && articles.length < Math.max(PAGE_SIZE, snapshot.expectedCount ?? PAGE_SIZE)) return
+    if (view === 'mois' && monthData === null) return
 
     restoredContextRef.current = scrollContext
     const targetY = Math.max(0, snapshot.y)
@@ -547,7 +696,7 @@ export function ArticleFeed({
       window.scrollTo({ top: targetY, behavior: 'auto' })
       clearExternalScrollSnapshot()
     })
-  }, [loading, articles.length, scrollContext])
+  }, [loading, articles.length, scrollContext, view, monthData])
 
   // ─── Pagination ───────────────────────────────────────────────────────────────
   const loadMore = useCallback(async () => {
@@ -594,6 +743,37 @@ export function ArticleFeed({
   function resetFilters() {
     applyFilters(null, '', [], 'push')
   }
+
+  // ─── Vue mensuelle : bascule et mois ──────────────────────────────────────────
+  function switchView(next: FeedView) {
+    if (next === viewRef.current) return
+    // Une journée précise filtrée en liste ouvre son mois : c'est elle qu'on veut
+    // situer, pas le mois en cours.
+    if (next === 'mois' && dateRange) {
+      const { y, m } = parisCivilDate(dateRange.from)
+      monthRef.current = { y, m }
+      setMonth({ y, m })
+    }
+    viewRef.current = next
+    setView(next)
+    applyFilters(null, searchInput, selectedCategories, 'push')
+  }
+
+  function changeMonth(next: CivilMonth) {
+    monthRef.current = next
+    setMonth(next)
+    applyFilters(null, searchInput, selectedCategories, 'push')
+  }
+
+  // Cartes du mois affiché. Des cartes d'un autre mois (requête encore en vol)
+  // donneraient des jours faux : on repart d'un mois vide, atténué. `grid` alimente le
+  // bandeau de jours et le compteur, `sections` les groupes de cartes.
+  const monthEvents = useMemo(
+    () => (monthData && monthData.key === serializeMonth(month) ? monthData.events : []),
+    [month, monthData]
+  )
+  const grid = useMemo(() => (monthData ? buildMonthGrid(month, monthEvents) : null), [month, monthData, monthEvents])
+  const sections = useMemo(() => (monthData ? buildMonthSections(month, monthEvents) : null), [month, monthData, monthEvents])
 
   // Cumulatif : chaque appui ajoute ou retire la catégorie de la sélection, sans
   // navigation de route — la liste reste affichée, simplement atténuée.
@@ -706,13 +886,25 @@ export function ArticleFeed({
   // « 12 actus · Ce weekend », « 3 actus pour « Oudon » ». Le total vient de la
   // requête, pas de la longueur de la liste : celle-ci n'est qu'une page.
   const countLabel = useMemo(() => {
+    if (view === 'mois') {
+      if (!grid || monthData?.key !== serializeMonth(month)) return null
+      const noun = grid.total === 1 ? 'événement' : 'événements'
+      const parts = [`${grid.total} ${noun} en ${formatMonthLabel(month)}`]
+      if (searchQuery) parts.push(`pour « ${searchInput.trim()} »`)
+      return parts.join(' ')
+    }
     if (total === null) return null
     const noun = total === 1 ? 'actu' : 'actus'
     const parts = [`${total} ${noun}`]
     if (dateRange?.label) parts.push(`· ${dateRange.label}`)
     if (searchQuery) parts.push(`pour « ${searchInput.trim()} »`)
     return parts.join(' ')
-  }, [total, dateRange, searchQuery, searchInput])
+  }, [view, grid, monthData, month, total, dateRange, searchQuery, searchInput])
+
+  const VIEW_BUTTON =
+    'inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors focus-ring'
+  const VIEW_ACTIVE = 'bg-brand-600 text-white'
+  const VIEW_IDLE = 'text-gray-700 hover:bg-gray-100'
 
   function renderCard(article: FeedArticle, absoluteIndex: number) {
     return (
@@ -732,7 +924,7 @@ export function ArticleFeed({
         onFavoriteToggled={handleFavoriteToggled}
         onFeedback={notify}
         scrollRestoreContext={scrollContext}
-        scrollRestoreCount={articles.length}
+        scrollRestoreCount={view === 'mois' ? monthEvents.length : articles.length}
       />
     )
   }
@@ -754,7 +946,7 @@ export function ArticleFeed({
   ) : null
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
       {/*
         Retour des actions de carte (masquage, favori, partage). Plus d'en-tête ici :
         le titre de la ville est porté par `CityHomePage`, le `<h1>` de ce composant
@@ -797,7 +989,47 @@ export function ArticleFeed({
                 </button>
               )}
             </div>
-            <DateFilter value={dateRange} onChange={applyDateRange} />
+            {/*
+              Pastilles de date à gauche, sélecteur « Liste | Mois » à droite. En mode
+              mois, la navigation de mois prend la place des pastilles : une plage de
+              dates n'a pas de sens sur un mois qui en est déjà une, et laisser la case
+              vide isolait le sélecteur à droite sur mobile.
+            */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                {view === 'liste' ? (
+                  <DateFilter value={dateRange} onChange={applyDateRange} />
+                ) : (
+                  <MonthNav month={month} currentMonth={currentMonth} onMonthChange={changeMonth} />
+                )}
+              </div>
+              <div
+                role="group"
+                aria-label="Mode d'affichage"
+                className="inline-flex shrink-0 rounded-full border border-gray-200 bg-white p-0.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => switchView('liste')}
+                  aria-pressed={view === 'liste'}
+                  className={cn(VIEW_BUTTON, view === 'liste' ? VIEW_ACTIVE : VIEW_IDLE)}
+                >
+                  <ListIcon className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">Liste</span>
+                  <span className="sr-only sm:hidden">Liste</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchView('mois')}
+                  aria-pressed={view === 'mois'}
+                  className={cn(VIEW_BUTTON, view === 'mois' ? VIEW_ACTIVE : VIEW_IDLE)}
+                >
+                  <CalendarDays className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">Mois</span>
+                  <span className="sr-only sm:hidden">Mois</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/*
@@ -856,7 +1088,7 @@ export function ArticleFeed({
 
           {/* Bandeau d'erreur quand la liste courante reste affichable (échec de
               pagination, par exemple) : on ne jette pas ce qui est déjà lu. */}
-          {error && articles.length > 0 && (
+          {view === 'liste' && error && articles.length > 0 && (
             <div
               role="alert"
               className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
@@ -870,12 +1102,27 @@ export function ArticleFeed({
           )}
 
           {/* Compteur : dit ce que les filtres ont retenu, ce que rien n'indiquait. */}
-          {countLabel && !loading && !error && articles.length > 0 && (
+          {countLabel && (view === 'mois' ? !monthLoading : !loading && !error && articles.length > 0) && (
             <p className="mb-3 text-xs text-gray-500" aria-live="polite">{countLabel}</p>
           )}
 
+          {/* Vue mensuelle */}
+          {view === 'mois' && (
+            <MonthView
+              month={month}
+              todayKey={todayKey}
+              grid={grid}
+              sections={sections}
+              loading={monthLoading}
+              error={monthError}
+              onRetry={() => void loadMonth(month, searchQuery, selectedCategories)}
+              renderCard={renderCard}
+              listClassName={LIST_CLASSES}
+            />
+          )}
+
           {/* Feed */}
-          <div role="status" aria-live="polite" aria-busy={loading || refetching}>
+          {view === 'liste' && <div role="status" aria-live="polite" aria-busy={loading || refetching}>
             {loading ? (
               <div className={LIST_CLASSES} aria-hidden="true">
                 {/* Six et non douze : sur mobile une colonne, douze cartes fantômes
@@ -946,7 +1193,7 @@ export function ArticleFeed({
                 {paginationFooter}
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </div>
