@@ -3,7 +3,15 @@ import { createBrowserClient } from '@supabase/ssr'
 function instantiate() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      // Connexion par empreinte / visage (`lib/auth/passkey.ts`). Sans ce drapeau,
+      // toutes les méthodes passkey d'auth-js lèvent. Requis en 2.106 ; il devient un
+      // no-op déprécié dans les versions suivantes (supabase-js #2695), à retirer lors
+      // d'une montée de version. Le client serveur n'en a pas besoin : la cérémonie
+      // WebAuthn se déroule entièrement dans le navigateur.
+      auth: { experimental: { passkey: true } },
+    }
   )
 }
 

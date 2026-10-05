@@ -4,7 +4,16 @@ import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Newspaper, Loader2 } from 'lucide-react'
+import {
+  dismissPasskeyOffer,
+  enrollThisDevice,
+  shouldOfferPasskey,
+  signInWithDevice,
+  usePasskeySupport,
+  type PasskeyFailure,
+} from '@/lib/auth/passkey'
+import { PasskeyNotice } from '@/components/account/PasskeyNotice'
+import { Newspaper, Loader2, FingerprintPattern } from 'lucide-react'
 
 /**
  * `useSearchParams` impose une frontière `<Suspense>` : sans elle, tout l'arbre est
@@ -53,6 +62,17 @@ function LoginForm() {
   const [resent, setResent] = useState(false)
   const [resendError, setResendError] = useState<string | null>(null)
 
+  const passkeySupported = usePasskeySupport()
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
+  const [passkeyNotice, setPasskeyNotice] = useState<PasskeyFailure | null>(null)
+  // `offer` : connecté par mot de passe, on propose d'activer l'empreinte avant de partir.
+  const [step, setStep] = useState<'form' | 'offer'>('form')
+
+  function goHome() {
+    router.push('/')
+    router.refresh()
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
@@ -62,10 +82,26 @@ function LoginForm() {
     if (error) {
       setError('Email ou mot de passe incorrect.')
       setLoading(false)
+    } else if (await shouldOfferPasskey()) {
+      setLoading(false)
+      setStep('offer')
     } else {
-      router.push('/')
-      router.refresh()
+      goHome()
     }
+  }
+
+  async function handlePasskeySignIn() {
+    setPasskeyBusy(true)
+    setPasskeyNotice(null)
+    setError(null)
+    const result = await signInWithDevice()
+    if (result.ok) {
+      // `passkeyBusy` reste levé pendant la navigation, pour éviter un double appui.
+      goHome()
+      return
+    }
+    setPasskeyBusy(false)
+    setPasskeyNotice(result.failure)
   }
 
   /**
@@ -98,6 +134,14 @@ function LoginForm() {
     } else {
       setResent(true)
     }
+  }
+
+  if (step === 'offer') {
+    return (
+      <LoginShell>
+        <PasskeyOffer onDone={goHome} />
+      </LoginShell>
+    )
   }
 
   return (
@@ -151,6 +195,28 @@ function LoginForm() {
         </div>
       )}
 
+      {passkeySupported && (
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handlePasskeySignIn}
+            disabled={passkeyBusy}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50 focus-ring"
+          >
+            {passkeyBusy
+              ? <Loader2 className="size-5 animate-spin" />
+              : <FingerprintPattern className="size-5 text-brand-600" />}
+            Se connecter avec l&apos;empreinte ou le visage
+          </button>
+          {passkeyNotice && <PasskeyNotice failure={passkeyNotice} />}
+          <div className="mt-4 flex items-center gap-3 text-xs text-gray-400" aria-hidden="true">
+            <span className="h-px flex-1 bg-gray-200" />
+            ou
+            <span className="h-px flex-1 bg-gray-200" />
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
@@ -193,5 +259,82 @@ function LoginForm() {
         </Link>
       </p>
     </LoginShell>
+  )
+}
+
+/**
+ * Proposée juste après une connexion par mot de passe, et seulement sur un appareil
+ * doté d'un capteur (`shouldOfferPasskey`) : c'est le moment où l'utilisateur vient de
+ * taper son mot de passe, donc celui où l'intérêt est le plus évident. « Plus tard »
+ * est mémorisé pour cet appareil — la proposition ne revient pas à chaque connexion.
+ * Les connexions par lien (confirmation, lien d'accès) ne passent pas par ici : ces
+ * utilisateurs activent depuis « Mon compte ».
+ */
+function PasskeyOffer({ onDone }: { onDone: () => void }) {
+  const [enrolling, setEnrolling] = useState(false)
+  const [failure, setFailure] = useState<PasskeyFailure | null>(null)
+
+  async function activate() {
+    setEnrolling(true)
+    setFailure(null)
+    const result = await enrollThisDevice()
+    if (result.ok) {
+      onDone()
+      return
+    }
+    setEnrolling(false)
+    setFailure(result.failure)
+  }
+
+  function later() {
+    dismissPasskeyOffer()
+    onDone()
+  }
+
+  // Après une vraie erreur, « Continuer » ne mémorise pas de refus : la proposition
+  // reviendra à la prochaine connexion, l'échec n'étant pas un choix de l'utilisateur.
+  const failed = failure?.kind === 'error'
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+          <FingerprintPattern className="size-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Se connecter plus vite ?</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Utilisez Face ID ou votre empreinte sur cet appareil : plus besoin de mot de
+            passe la prochaine fois.
+          </p>
+        </div>
+      </div>
+
+      {failure && <PasskeyNotice failure={failure} />}
+
+      <div className="mt-5 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={activate}
+          disabled={enrolling}
+          className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 focus-ring"
+        >
+          {enrolling && <Loader2 className="size-4 animate-spin" />}
+          {failed ? 'Réessayer' : 'Activer'}
+        </button>
+        <button
+          type="button"
+          onClick={failed ? onDone : later}
+          disabled={enrolling}
+          className="w-full py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors focus-ring"
+        >
+          {failed ? 'Continuer' : 'Plus tard'}
+        </button>
+      </div>
+
+      <p className="mt-4 text-center text-xs text-gray-500">
+        Activable à tout moment depuis Mon compte.
+      </p>
+    </div>
   )
 }

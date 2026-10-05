@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { Menu, X, Newspaper, Monitor, Moon, Sun, LogOut, Settings } from 'lucide-react'
+import { Menu, X, Newspaper, Monitor, Moon, Sun, LogOut, Settings, UserRound } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useTheme, type ThemeChoice } from '@/components/theme/ThemeProvider'
 import { cn } from '@/lib/utils'
@@ -141,6 +141,14 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
                     Administration
                   </Link>
                 )}
+                <Link
+                  href="/compte"
+                  aria-current={pathname === '/compte' ? 'page' : undefined}
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors focus-ring"
+                >
+                  <UserRound className="size-4" />
+                  Mon compte
+                </Link>
                 <button
                   type="button"
                   onClick={signOut}
@@ -215,14 +223,25 @@ export function Navbar({ initialUser = null, isAdmin = false }: NavbarProps) {
               il n'y a pas de barre basse au-delà de 640px.
             */}
             {user ? (
-              <button
-                type="button"
-                onClick={signOut}
-                className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-left text-gray-700 hover:bg-gray-100 font-medium focus-ring"
-              >
-                <LogOut className="size-4" />
-                Déconnexion
-              </button>
+              <>
+                {/* Ouverte à tout compte connecté : c'est là qu'on active l'empreinte. */}
+                <Link
+                  href="/compte"
+                  aria-current={pathname === '/compte' ? 'page' : undefined}
+                  className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring"
+                >
+                  <UserRound className="size-4" />
+                  Mon compte
+                </Link>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="inline-flex items-center gap-2 px-3 py-3 rounded-lg text-left text-gray-700 hover:bg-gray-100 font-medium focus-ring"
+                >
+                  <LogOut className="size-4" />
+                  Déconnexion
+                </button>
+              </>
             ) : (
               <>
                 <Link href="/auth/login" className="px-3 py-3 rounded-lg text-gray-700 hover:bg-gray-100 font-medium focus-ring">
