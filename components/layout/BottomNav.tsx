@@ -72,10 +72,13 @@ export function BottomNav({ isAdmin = false }: BottomNavProps) {
 
   // Le slug de ville se lit dans l'URL : la barre vit dans le layout racine, elle
   // n'a pas accès aux props de la page. Repli sur la seule ville seedée pour les
-  // routes hors ville (`/profil`, `/a-propos`).
+  // routes hors ville (`/profil`, `/compte`, `/a-propos`). Toute nouvelle route de
+  // premier niveau doit figurer ici : sinon son segment est pris pour un slug de ville,
+  // `onCityRoot` devient vrai et les onglets ne font plus que réécrire `?tab=` sur
+  // place — la barre ne permet alors plus de quitter la page.
   const firstSegment = pathname.split('/').filter(Boolean)[0]
   const citySlug =
-    firstSegment && !['profil', 'admin', 'a-propos', 'offline'].includes(firstSegment)
+    firstSegment && !['profil', 'compte', 'admin', 'a-propos', 'offline'].includes(firstSegment)
       ? firstSegment
       : DEFAULT_CITY_SLUG
 

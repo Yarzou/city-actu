@@ -46,6 +46,13 @@ function LoginShell({ children }: { children?: React.ReactNode }) {
   )
 }
 
+/**
+ * Destination directe après connexion. `/` ne fait que rediriger vers la ville
+ * (`app/page.tsx`) : y passer coûtait un aller-retour serveur de plus, pendant lequel
+ * le squelette de la ville (`loading.tsx`) ne pouvait pas encore s'afficher.
+ */
+const HOME_PATH = '/la-chapelle-sur-erdre'
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -69,7 +76,7 @@ function LoginForm() {
   const [step, setStep] = useState<'form' | 'offer'>('form')
 
   function goHome() {
-    router.push('/')
+    router.push(HOME_PATH)
     router.refresh()
   }
 
@@ -83,6 +90,10 @@ function LoginForm() {
       setError('Email ou mot de passe incorrect.')
       setLoading(false)
     } else if (await shouldOfferPasskey()) {
+      // Pendant que l'utilisateur lit la proposition : la page ville étant dynamique,
+      // le préchargement s'arrête à son `loading.tsx` — le squelette apparaît donc dès
+      // l'appui sur « Activer » ou « Plus tard », au lieu d'une carte figée.
+      router.prefetch(HOME_PATH)
       setLoading(false)
       setStep('offer')
     } else {
@@ -272,6 +283,10 @@ function LoginForm() {
  */
 function PasskeyOffer({ onDone }: { onDone: () => void }) {
   const [enrolling, setEnrolling] = useState(false)
+  // Levé dès l'appui sur « Plus tard » / « Continuer » et jamais rabaissé : la carte
+  // reste affichée le temps que la page ville arrive, et sans retour visuel l'appui
+  // paraissait ne pas avoir été pris en compte.
+  const [leaving, setLeaving] = useState(false)
   const [failure, setFailure] = useState<PasskeyFailure | null>(null)
 
   async function activate() {
@@ -279,6 +294,7 @@ function PasskeyOffer({ onDone }: { onDone: () => void }) {
     setFailure(null)
     const result = await enrollThisDevice()
     if (result.ok) {
+      // `enrolling` reste levé : même retour visuel pendant la navigation.
       onDone()
       return
     }
@@ -286,14 +302,20 @@ function PasskeyOffer({ onDone }: { onDone: () => void }) {
     setFailure(result.failure)
   }
 
+  function leave() {
+    setLeaving(true)
+    onDone()
+  }
+
   function later() {
     dismissPasskeyOffer()
-    onDone()
+    leave()
   }
 
   // Après une vraie erreur, « Continuer » ne mémorise pas de refus : la proposition
   // reviendra à la prochaine connexion, l'échec n'étant pas un choix de l'utilisateur.
   const failed = failure?.kind === 'error'
+  const busy = enrolling || leaving
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
@@ -316,7 +338,7 @@ function PasskeyOffer({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={activate}
-          disabled={enrolling}
+          disabled={busy}
           className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 focus-ring"
         >
           {enrolling && <Loader2 className="size-4 animate-spin" />}
@@ -324,10 +346,11 @@ function PasskeyOffer({ onDone }: { onDone: () => void }) {
         </button>
         <button
           type="button"
-          onClick={failed ? onDone : later}
-          disabled={enrolling}
-          className="w-full py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors focus-ring"
+          onClick={failed ? leave : later}
+          disabled={busy}
+          className="w-full py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 focus-ring"
         >
+          {leaving && <Loader2 className="size-4 animate-spin" />}
           {failed ? 'Continuer' : 'Plus tard'}
         </button>
       </div>
