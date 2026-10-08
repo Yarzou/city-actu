@@ -1,13 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sparkles, RefreshCw, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, RefreshCw, Trash2, ChevronDown, ChevronUp, Mail } from 'lucide-react'
 import { cn, formatDigestHtml } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Notice } from '@/components/ui/Notice'
+import { buttonClass } from '@/components/ui/Button'
 import type { LatestDigest } from '@/lib/digest/latest'
 
 interface AIDigestTabProps {
   citySlug: string
+  /** Nom affiché de la ville : titre de la carte (« La semaine à … »). */
+  cityName?: string
   /**
    * Le dernier résumé est visible de tous — c'est tout l'intérêt de l'onglet pour un
    * visiteur anonyme. Restent réservés à une session l'historique (`history` répond
@@ -73,6 +77,7 @@ const digestCache = new Map<string, DigestCacheEntry>()
 
 export function AIDigestTab({
   citySlug,
+  cityName = 'La Chap’',
   isAuthenticated = false,
   canManageContent = false,
   canGenerate = false,
@@ -407,204 +412,178 @@ export function AIDigestTab({
     }
   }
 
+  // Corps d'un résumé (HTML assaini par `formatDigestHtml`) : intertitres de jour dans
+  // l'accent, listes à puces, texte courant à 17 px — c'est un texte à lire.
+  const DIGEST_BODY =
+    'space-y-3 text-body text-ink [&_h3]:mt-4 [&_h3]:text-subhead [&_h3]:font-bold [&_h3]:text-accent [&_h3:first-child]:mt-0 [&_li]:mb-1 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5'
+
+  const generatedLabel = createdAt
+    ? new Date(createdAt).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', hour: '2-digit', minute: '2-digit' })
+    : null
+
   return (
-    <div className="max-w-2xl mx-auto px-1 py-6">
-      <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-6 mb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-100">
-            <Sparkles className="size-5 text-brand-700" />
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+      <article className="overflow-hidden rounded-[22px] bg-card shadow-lift">
+        <header className="flex items-center gap-3 p-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-fill text-white">
+            <Sparkles className="size-[22px]" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-headline text-ink">La semaine à {cityName}</h2>
+            <p className="text-footnote text-ink-muted">
+              {status === 'done' && generatedLabel
+                ? `Généré ${generatedLabel}${articleCount !== null ? ` · ${articleCount} actus` : ''}`
+                : 'Les actus de la semaine, du lundi au dimanche'}
+            </p>
           </div>
-          <div>
-            <h2 className="font-semibold text-gray-900">Résumé hebdomadaire IA</h2>
-            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré sur la semaine en cours (lundi à dimanche)</p>
-          </div>
-        </div>
-        <p className="text-sm text-gray-600 leading-relaxed mb-4">
-          {canGenerate
-            ? 'Notre assistant IA affiche le dernier résumé enregistré et permet de le régénérer à la demande.'
-            : 'Notre assistant IA affiche le dernier résumé enregistré. Sa génération est réservée aux administrateurs.'}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {canGenerate && (
-            <button
-              onClick={generate}
-              disabled={status === 'loading'}
-              className={cn(
-                'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                status === 'loading'
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-brand-600 text-white hover:bg-brand-700'
-              )}
-            >
-              <RefreshCw className={cn('size-4', status === 'loading' && 'animate-spin')} />
-              {status === 'loading' ? 'Génération en cours…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
-            </button>
+        </header>
+
+        <div className="px-4 pb-5">
+          {initialLoading && (
+            <p className="text-subhead text-ink-muted">Chargement du dernier résumé…</p>
           )}
+          {!initialLoading && status === 'idle' && info && (
+            <p className="text-subhead text-ink-muted">
+              {info}
+              {/* Sans ce complément, un lecteur non-admin voit « Aucun résumé disponible »
+                  sans aucun bouton, donc sans savoir quoi en attendre. */}
+              {!canGenerate && ' Un administrateur doit le générer.'}
+            </p>
+          )}
+          {status === 'loading' && (
+            <p className="text-subhead text-ink-muted">L’IA lit les actus de la semaine…</p>
+          )}
+          {status === 'done' && digest && (
+            <div className={DIGEST_BODY} dangerouslySetInnerHTML={{ __html: formatDigestHtml(digest) }} />
+          )}
+        </div>
+      </article>
+
+      {/* L'erreur s'affiche quel que soit l'état : un envoi par mail raté laissait le
+          statut à « done », et son message n'apparaissait nulle part. */}
+      {error && <Notice tone="danger">{error}</Notice>}
+      {status === 'done' && info && <Notice tone="success">{info}</Notice>}
+
+      {(canGenerate || (status === 'done' && digest && isAuthenticated)) && (
+        <div className="flex flex-wrap gap-2.5">
           {status === 'done' && digest && isAuthenticated && (
-            <button
-              onClick={sendByEmail}
-              disabled={sendingEmail}
-              className={cn(
-                'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors',
-                sendingEmail
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-brand-700 border border-brand-200 hover:bg-brand-50'
-              )}
-            >
-              {sendingEmail ? 'Envoi…' : 'Envoyer par mail'}
+            <button type="button" onClick={sendByEmail} disabled={sendingEmail} className={buttonClass('secondary', 'md', 'flex-1')}>
+              <Mail className="size-[18px]" aria-hidden="true" />
+              {sendingEmail ? 'Envoi…' : 'Recevoir par e-mail'}
             </button>
           )}
-        </div>
-      </div>
-
-      {initialLoading && (
-        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-          Chargement du dernier résumé…
-        </div>
-      )}
-
-      {status === 'error' && error && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-          ❌ {error}
-        </div>
-      )}
-
-      {!initialLoading && status === 'idle' && info && (
-        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-          {info}
-          {/* Sans ce complément, un lecteur non-admin voit « Aucun résumé disponible »
-              sans aucun bouton, donc sans savoir quoi en attendre. */}
-          {!canGenerate && ' Un administrateur doit le générer.'}
-        </div>
-      )}
-
-      {status === 'done' && digest && (
-        <div className="rounded-2xl border border-gray-100 bg-white shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-700 bg-brand-50 px-3 py-1 rounded-full">
-              <Sparkles className="size-3" />
-              Résumé IA
-            </span>
-            <div className="text-right">
-              {articleCount !== null && (
-                <p className="text-xs text-gray-400">{articleCount} articles analysés</p>
-              )}
-              {createdAt && (
-                <p className="text-xs text-gray-400">
-                  {new Date(createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                </p>
-              )}
-            </div>
-          </div>
-          <div
-            className="text-gray-800 text-sm leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
-            dangerouslySetInnerHTML={{ __html: formatDigestHtml(digest) }}
-          />
+          {canGenerate && (
+            <button type="button" onClick={generate} disabled={status === 'loading'} className={buttonClass('tinted', 'md', 'flex-1')}>
+              <RefreshCw className={cn('size-[18px]', status === 'loading' && 'animate-spin')} aria-hidden="true" />
+              {status === 'loading' ? 'Génération…' : status === 'done' ? 'Régénérer' : 'Générer le résumé'}
+            </button>
+          )}
         </div>
       )}
 
       {/* Historique : réservé aux connectés (`history` répond 401), et absent plutôt
-          qu'affiché en erreur. Le bloc n'est pas ré-indenté pour garder le diff lisible. */}
+          qu'affiché en erreur. Liste groupée façon Réglages, repliée par défaut. */}
       {isAuthenticated && (
-      <div className="mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <button
-          onClick={() => {
-            const opening = !historyOpen
-            setHistoryOpen(opening)
-            // Chargé au premier dépliage seulement : les ouvertures suivantes réutilisent
-            // la liste déjà en mémoire.
-            if (opening && !historyLoaded && !historyLoading) void loadHistory()
-          }}
-          aria-expanded={historyOpen}
-          className="w-full flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors"
-        >
-          <p className="text-sm font-medium text-gray-700 text-left">
-            {/* Le compteur n'apparaît qu'une fois la liste chargée : sinon il annoncerait
-                « (0) » avant même d'avoir regardé. */}
-            Historique des résumés IA{historyLoaded ? ` (${summaries.length})` : ''}
-          </p>
-          {historyOpen ? (
-            <ChevronUp className="size-4 text-gray-500" />
-          ) : (
-            <ChevronDown className="size-4 text-gray-500" />
-          )}
-        </button>
+        <section className="mt-2 flex flex-col">
+          <h2 className="mb-2 ml-4 text-footnote uppercase tracking-[0.3px] text-ink-muted">Historique</h2>
+          <div className="overflow-hidden rounded-[14px] bg-card">
+            <button
+              type="button"
+              onClick={() => {
+                const opening = !historyOpen
+                setHistoryOpen(opening)
+                // Chargé au premier dépliage seulement : les ouvertures suivantes
+                // réutilisent la liste déjà en mémoire.
+                if (opening && !historyLoaded && !historyLoading) void loadHistory()
+              }}
+              aria-expanded={historyOpen}
+              className="flex min-h-[52px] w-full items-center justify-between gap-3 px-4 text-left active:bg-fill-soft focus-ring"
+            >
+              <span className="text-body text-ink">
+                {/* Le compteur n'apparaît qu'une fois la liste chargée : sinon il
+                    annoncerait « (0) » avant même d'avoir regardé. */}
+                Résumés précédents{historyLoaded ? ` (${summaries.length})` : ''}
+              </span>
+              {historyOpen
+                ? <ChevronUp className="size-[18px] text-ink-faint" strokeWidth={2.4} />
+                : <ChevronDown className="size-[18px] text-ink-faint" strokeWidth={2.4} />}
+            </button>
 
-        {historyOpen && (
-          <>
-            {historyLoading ? (
-              <div className="px-4 py-4 text-sm text-gray-500">Chargement de l’historique…</div>
-            ) : historyError ? (
-              <div className="px-4 py-4 text-sm text-red-700">❌ {historyError}</div>
-            ) : summaries.length === 0 ? (
-              <div className="px-4 py-4 text-sm text-gray-500">Aucun résumé IA disponible.</div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {bodyError && (
-                  <div className="px-4 py-3 text-sm text-red-700">❌ {bodyError}</div>
-                )}
-                {summaries.map((summary) => {
-                  const expanded = expandedSummaryId === summary.id
-                  const body = bodies[summary.id]
-                  return (
-                  <div key={summary.id} className="px-4 py-4">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      {/*
-                        L'en-tête de ligne est devenu un bouton : le corps du résumé n'est
-                        plus dans la liste, il se demande à l'unité. Un seul résumé rendu
-                        à la fois, au lieu des vingt d'avant.
-                      */}
-                      <button
-                        onClick={() => void toggleSummary(summary.id)}
-                        aria-expanded={expanded}
-                        className="min-w-0 flex items-start gap-2 text-left focus-ring rounded-md"
-                      >
-                        {expanded
-                          ? <ChevronUp className="size-4 shrink-0 mt-0.5 text-gray-400" />
-                          : <ChevronDown className="size-4 shrink-0 mt-0.5 text-gray-400" />
-                        }
-                        <span className="min-w-0">
-                          <span className="block text-xs text-gray-400">
-                            {new Date(summary.createdAt).toLocaleDateString('fr-FR', {
-                              day: '2-digit',
-                              month: 'long',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                          <span className="block text-xs text-gray-500">
-                            {summary.articleCount} article(s)
-                            {bodyLoadingId === summary.id && ' — chargement…'}
-                          </span>
-                        </span>
-                      </button>
-                      {canManageContent && (
-                        <button
-                          onClick={() => setSummaryToDelete(summary)}
-                          disabled={deletingSummaryId === summary.id}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors shrink-0"
-                          title="Supprimer ce résumé"
-                        >
-                          <Trash2 className={cn('size-3.5', deletingSummaryId === summary.id && 'animate-pulse')} />
-                          Supprimer
-                        </button>
-                      )}
-                    </div>
-                    {expanded && body && (
-                      <div
-                        className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
-                        dangerouslySetInnerHTML={{ __html: formatDigestHtml(body) }}
-                      />
+            {historyOpen && (
+              <div className="border-t border-separator">
+                {historyLoading ? (
+                  <p className="px-4 py-4 text-subhead text-ink-muted">Chargement de l’historique…</p>
+                ) : historyError ? (
+                  <p role="alert" className="px-4 py-4 text-subhead text-danger">{historyError}</p>
+                ) : summaries.length === 0 ? (
+                  <p className="px-4 py-4 text-subhead text-ink-muted">Aucun résumé IA disponible.</p>
+                ) : (
+                  <ul>
+                    {bodyError && (
+                      <li role="alert" className="px-4 py-3 text-subhead text-danger">{bodyError}</li>
                     )}
-                  </div>
-                  )
-                })}
+                    {summaries.map((summary) => {
+                      const expanded = expandedSummaryId === summary.id
+                      const body = bodies[summary.id]
+                      return (
+                        <li key={summary.id} className="border-t border-separator first:border-t-0">
+                          <div className="flex items-center gap-2 pr-2">
+                            {/*
+                              L'en-tête de ligne est un bouton : le corps du résumé n'est
+                              pas dans la liste, il se demande à l'unité. Un seul résumé
+                              rendu à la fois.
+                            */}
+                            <button
+                              type="button"
+                              onClick={() => void toggleSummary(summary.id)}
+                              aria-expanded={expanded}
+                              className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 px-4 py-2 text-left active:bg-fill-soft focus-ring"
+                            >
+                              <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="text-body text-ink">
+                                  {new Date(summary.createdAt).toLocaleDateString('fr-FR', {
+                                    timeZone: 'Europe/Paris',
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                  })}
+                                </span>
+                                <span className="text-footnote text-ink-muted">
+                                  {summary.articleCount} {summary.articleCount > 1 ? 'actus' : 'actu'}
+                                  {bodyLoadingId === summary.id && ' · chargement…'}
+                                </span>
+                              </span>
+                              {expanded
+                                ? <ChevronUp className="size-[18px] shrink-0 text-ink-faint" strokeWidth={2.4} />
+                                : <ChevronDown className="size-[18px] shrink-0 text-ink-faint" strokeWidth={2.4} />}
+                            </button>
+                            {canManageContent && (
+                              <button
+                                type="button"
+                                onClick={() => setSummaryToDelete(summary)}
+                                disabled={deletingSummaryId === summary.id}
+                                className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-danger disabled:opacity-50 focus-ring"
+                                aria-label="Supprimer ce résumé"
+                              >
+                                <Trash2 className={cn('size-[18px]', deletingSummaryId === summary.id && 'animate-pulse')} />
+                              </button>
+                            )}
+                          </div>
+                          {expanded && body && (
+                            <div
+                              className={cn(DIGEST_BODY, 'px-4 pb-4 text-subhead')}
+                              dangerouslySetInnerHTML={{ __html: formatDigestHtml(body) }}
+                            />
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </div>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </section>
       )}
 
       <ConfirmDialog

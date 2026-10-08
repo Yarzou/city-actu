@@ -1,21 +1,20 @@
+import { Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
-import { GeistSans } from 'geist/font/sans'
-// Conservé : `font-mono` est réellement utilisé par le panneau d'administration
-// (champs de sélecteurs CSS, slugs). Le sortir du layout racine pour ne le charger
-// que sur /profil reste une optimisation possible, mais ce n'est pas du code mort.
-import { GeistMono } from 'geist/font/mono'
 import Script from 'next/script'
 import './globals.css'
-import { getSessionIsAdmin, getSessionUser } from '@/lib/auth/session'
-import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
-import { BottomNav } from '@/components/layout/BottomNav'
+import { TabBar } from '@/components/layout/TabBar'
 import { ScrollToTop } from '@/components/layout/ScrollToTop'
 import PWAInstallBanner from '@/components/layout/PWAInstallBanner'
 import { ThemeProvider } from '@/components/theme/ThemeProvider'
 
 export const viewport: Viewport = {
-  themeColor: '#16a34a',
+  // Couleur du fond de page : la barre d'état se fond dans l'écran, comme une appli
+  // native, au lieu de la bande verte d'avant.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f2f2f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+  ],
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -39,15 +38,19 @@ export const metadata: Metadata = {
   // produirait des doublons.
 }
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Session et statut admin mémoïsés par requête (`lib/auth/session.ts`) : la page
-  // ville les redemande, elle obtient le même résultat sans second aller-retour.
-  // Le statut conditionne le lien « Administration » du menu : /profil renvoie 404
-  // aux non-administrateurs, le proposer à tous mènerait à une impasse.
-  const [user, isAdmin] = await Promise.all([getSessionUser(), getSessionIsAdmin()])
-
+/**
+ * Layout racine de la refonte « Givre ».
+ *
+ * Plus de barre haute fixe : chaque écran porte son grand titre et, dans son coin, le
+ * bouton rond du compte (`PageHeader`). La navigation tient dans la barre d'onglets
+ * flottante en verre (`TabBar`), la même sur téléphone et sur ordinateur. Le layout ne
+ * résout donc plus la session : elle ne servait qu'à la barre haute et à l'entrée
+ * « Admin » de l'ancienne barre basse, et les pages la redemandent au cache par requête
+ * (`lib/auth/session.ts`) quand elles en ont besoin.
+ */
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -55,20 +58,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           }}
         />
       </head>
-      <body className="font-sans bg-gray-50 text-gray-900 antialiased min-h-full flex flex-col">
+      <body className="font-sans bg-canvas text-ink antialiased min-h-full flex flex-col">
         <ThemeProvider>
-          <Navbar initialUser={user ? { id: user.id } : null} isAdmin={isAdmin} />
           {/*
-            `pt-[var(--header-h)]` : le décalage suivait l'en-tête à `pt-16` en dur,
-            faux de la hauteur de l'encoche en PWA standalone.
-            `pb-20` sur mobile : sans quoi la barre de navigation basse recouvre la
-            fin du feed et le pied de page.
+            Bande opaque sous la barre d'état. En PWA standalone (`viewportFit: cover`)
+            la page défile sous l'heure et la batterie : sans elle, le texte des cartes
+            passerait derrière. Hauteur nulle hors iPhone à encoche.
           */}
-          <main className="flex-1 pt-[var(--header-h)] pb-20 sm:pb-0">
-            {children}
-          </main>
+          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-40 h-[var(--sat)] bg-canvas" />
+          <main className="flex-1">{children}</main>
+          {/* Le pied de page porte la marge de la barre flottante (`pb-tabbar`) : la
+              dernière carte et le lien « À propos » restent atteignables au-dessus. */}
           <Footer />
-          <BottomNav isAdmin={isAdmin} />
+          {/* `useSearchParams` impose une frontière : sans elle, les pages statiques
+              (À propos, hors ligne, 404) sortiraient du pré-rendu. */}
+          <Suspense fallback={null}>
+            <TabBar />
+          </Suspense>
           <ScrollToTop />
           <PWAInstallBanner />
         </ThemeProvider>

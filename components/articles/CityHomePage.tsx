@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { Newspaper, MapPin, Heart, Sparkles } from 'lucide-react'
+import { Sparkles, UserRound } from 'lucide-react'
 import { ArticleFeed } from './ArticleFeed'
+import { GlassIconLink, PageHeader } from '@/components/ui/PageHeader'
 import { cn } from '@/lib/utils'
-import { SPOTLIGHT_SLUG, pushTab, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
+import { SPOTLIGHT_SLUG, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import type { LatestDigest } from '@/lib/digest/latest'
 import type { Category } from '@/lib/types'
 
@@ -16,41 +16,28 @@ const FavoritesTab = dynamic(() => import('./FavoritesTab').then((m) => m.Favori
 // `loading` fourni ici et pas pour les favoris : le résumé IA est souvent servi dans le
 // HTML par la page (prop `initialDigest`), donc le seul temps d'attente restant est le
 // téléchargement du chunk — sans repli, la zone était simplement vide. Le squelette
-// reprend le conteneur et la carte d'en-tête d'`AIDigestTab`, comme celui de `FeedSlot`
-// reprend le conteneur d'`ArticleFeed` : sinon le contenu se décale au remplacement.
+// reprend la carte d'en-tête d'`AIDigestTab`, sinon le contenu se décale au remplacement.
 const AIDigestTab = dynamic(() => import('./AIDigestTab').then((m) => m.AIDigestTab), {
   loading: () => (
-    <div className="max-w-2xl mx-auto px-1 py-6">
-      <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-6 mb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-100">
-            <Sparkles className="size-5 text-brand-700" />
-          </div>
+    <div className="mx-auto flex max-w-2xl flex-col gap-4">
+      <div className="rounded-[22px] bg-card p-4 shadow-lift">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-fill text-white">
+            <Sparkles className="size-[22px]" />
+          </span>
           <div>
-            <h2 className="font-semibold text-gray-900">Résumé hebdomadaire IA</h2>
-            <p className="text-xs text-gray-500">Dernier résumé à la demande, généré sur la semaine en cours (lundi à dimanche)</p>
+            <p className="text-headline text-ink">La semaine à La Chap’</p>
+            <p className="text-footnote text-ink-muted">Chargement du dernier résumé…</p>
           </div>
         </div>
-        <div className="h-4 w-3/4 rounded bg-gray-100" />
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-        Chargement du dernier résumé…
+        <div className="mt-4 space-y-2">
+          <div className="h-4 w-full animate-pulse rounded bg-fill-soft" />
+          <div className="h-4 w-5/6 animate-pulse rounded bg-fill-soft" />
+        </div>
       </div>
     </div>
   ),
 })
-
-// « Autour de la Chap' » remplace « Guinguettes » : l'onglet mis en avant porte
-// désormais la catégorie `metropole`, alimentée par fest.fr, dont les événements sont
-// ceux des communes voisines (voir `SPOTLIGHT_SLUG`). Le libellé est plus long que les
-// autres et c'est assumé ici — il y a la place au-delà de 640px ; la barre basse, elle,
-// le raccourcit (voir `BottomNav`).
-const TABS: { id: HomeTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'actus',     label: 'Actus',              icon: <Newspaper className="size-4" /> },
-  { id: 'metropole', label: "Autour de la Chap'", icon: <MapPin className="size-4" /> },
-  { id: 'favoris',   label: 'Favoris',            icon: <Heart className="size-4" /> },
-  { id: 'ia',        label: 'Résumés IA',         icon: <Sparkles className="size-4" /> },
-]
 
 interface CityHomePageProps {
   citySlug: string
@@ -61,6 +48,10 @@ interface CityHomePageProps {
   userId: string | null
   isAdmin: boolean
   horizon: string
+  /** « jeudi 8 octobre », calculé par le serveur en heure de Paris. */
+  todayLabel: string
+  /** « Du 5 au 11 octobre » : la semaine du résumé, même provenance. */
+  weekLabel: string
   /**
    * Dernier résumé IA, préparé par le serveur quand on arrive directement sur
    * `?tab=ia`. `undefined` = rien de préparé (autre onglet à l'arrivée, ou lecture en
@@ -80,6 +71,20 @@ interface CityHomePageProps {
   children?: React.ReactNode
 }
 
+/** Titre et sous-titre de chaque onglet : l'écran dit où l'on est, comme sur iOS. */
+function tabHeading(tab: HomeTab, cityName: string): { title: string; subtitle: string } {
+  switch (tab) {
+    case 'metropole':
+      return { title: 'Autour de la Chap’', subtitle: 'Nantes, Ancenis, Angers et alentours' }
+    case 'favoris':
+      return { title: 'Favoris', subtitle: 'Vos actus gardées sous la main' }
+    case 'ia':
+      return { title: 'Résumé', subtitle: `La semaine à ${cityName}, écrite par l’IA` }
+    default:
+      return { title: 'Actus', subtitle: cityName }
+  }
+}
+
 export function CityHomePage({
   citySlug,
   cityName,
@@ -88,78 +93,48 @@ export function CityHomePage({
   userId,
   isAdmin,
   horizon,
+  todayLabel,
+  weekLabel,
   initialDigest,
   children,
 }: CityHomePageProps) {
-  // L'onglet vit dans l'URL (`?tab=`) et non plus en state local : il est désormais
-  // partageable, survit au rafraîchissement, se défait au bouton retour, et peut
-  // servir de cible aux raccourcis du manifeste PWA.
+  // L'onglet vit dans l'URL (`?tab=`) et non en state local : il est partageable,
+  // survit au rafraîchissement, se défait au bouton retour, et sert de cible aux
+  // raccourcis du manifeste PWA. Il change par la barre d'onglets flottante (`TabBar`),
+  // seule navigation depuis la refonte : la rangée d'onglets desktop a disparu.
   const searchParams = useSearchParams()
-  const urlTab = searchParams.get('tab')
   const isAuthenticated = Boolean(userId)
   // Même relecture que côté serveur, alias `?tab=guinguettes` compris : les deux
   // doivent tomber sur le même onglet, sinon le feed rendu par le serveur ne serait pas
   // celui que le client affiche.
-  const tab: HomeTab = toHomeTab(urlTab)
-
-  // Mécanique partagée avec la barre de navigation basse : voir `pushTab`. Un clic sur
-  // l'onglet déjà actif remonte en haut, comme dans la barre basse.
-  const selectTab = useCallback((next: HomeTab) => {
-    if (next === tab) {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-    pushTab(next)
-  }, [tab])
+  const tab: HomeTab = toHomeTab(searchParams.get('tab'))
 
   const isServerRenderedTab = tab === serverTab
   const isFeedTab = tab === 'actus' || tab === 'metropole'
+  const { title, subtitle } = tabHeading(tab, cityName)
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-12">
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 pt-safe sm:px-6 lg:px-8">
       {/*
-        City header. Le titre passe en `sr-only` sur mobile : il est repris dans la
-        barre haute, à côté de « Ville Actu ». `sr-only` et non `hidden` pour que la
-        page garde un <h1> annonçable — et pour ne pas laisser deux titres concurrents
-        à l'écran.
+        Le compte est un bouton rond en verre dans le coin, comme dans les applis
+        d'Apple : il mène à « Compte » (Face ID, apparence, administration) une fois
+        connecté, à la connexion sinon. Il remplace la barre haute et son menu.
       */}
-      <div className="sm:mb-6">
-        <h1 className="sr-only sm:not-sr-only text-3xl font-bold text-gray-900 tracking-tight">{cityName}</h1>
-      </div>
-
-      {/*
-        Onglets : desktop uniquement. Sur mobile, la barre de navigation basse fait le
-        même travail, en fixe. Cette rangée était en `overflow-x-auto snap-x`, donc
-        elle glissait sous le doigt au moindre appui-déplacé — toute cette mécanique
-        est retirée, quatre onglets tiennent sans déborder au-delà de 640px. Les quatre
-        sont proposés à tout le monde : « Résumés IA » affiche le dernier résumé sans
-        session.
-      */}
-      <div
-        role="tablist"
-        aria-label="Sections"
-        className="hidden sm:flex border-b border-gray-200 mb-6"
-      >
-        {TABS.map(({ id, label, icon }) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => selectTab(id)}
-            className={cn(
-              'inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap focus-ring',
-              tab === id
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            )}
+      <PageHeader
+        eyebrow={tab === 'ia' ? weekLabel : todayLabel}
+        title={title}
+        subtitle={subtitle}
+        trailing={
+          <GlassIconLink
+            href={isAuthenticated ? '/compte' : '/auth/login'}
+            label={isAuthenticated ? 'Compte' : 'Se connecter'}
+            className="size-10"
           >
-            <span aria-hidden="true">{icon}</span>
-            {label}
-          </button>
-        ))}
-      </div>
+            <UserRound className={cn('size-5', isAuthenticated && 'text-accent')} strokeWidth={2.2} aria-hidden="true" />
+          </GlassIconLink>
+        }
+      />
 
-      {/* Tab content */}
       {isFeedTab && isServerRenderedTab && children}
       {isFeedTab && !isServerRenderedTab && (
         // Onglet atteint par un changement côté client : le serveur n'a pas préparé ce
@@ -184,6 +159,7 @@ export function CityHomePage({
         // suppression. Les deux derniers valent `isAdmin` aujourd'hui.
         <AIDigestTab
           citySlug={citySlug}
+          cityName={cityName}
           isAuthenticated={isAuthenticated}
           canManageContent={isAdmin}
           canGenerate={isAdmin}

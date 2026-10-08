@@ -8,12 +8,13 @@ import { cn } from '@/lib/utils'
 const SHOW_AFTER_PX = 700
 
 /**
- * Bouton « haut de page », flottant, qui n'apparaît qu'après un écran de défilement.
+ * Bouton « haut de page », rond et en verre, qui n'apparaît qu'après un écran de
+ * défilement.
  *
  * Le feed charge trois pages au scroll avant de passer au bouton « Voir plus » :
  * soixante cartes plus bas, revenir aux filtres demandait de tout remonter au pouce.
- * Sur mobile il se place au-dessus de la barre de navigation basse (`bottom-20`), et
- * disparaît sur les pages où celle-ci est absente (`/auth`), qui ne défilent pas.
+ * Il se pose juste au-dessus de la barre d'onglets flottante (`bottom-toast`). Un
+ * appui sur l'onglet déjà actif fait la même chose.
  */
 export function ScrollToTop() {
   const [visible, setVisible] = useState(false)
@@ -45,13 +46,12 @@ export function ScrollToTop() {
       aria-hidden={!visible}
       tabIndex={visible ? 0 : -1}
       className={cn(
-        'fixed right-4 z-30 inline-flex size-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-md transition-all hover:bg-gray-50 hover:text-brand-700 focus-ring',
-        'bottom-20 sm:bottom-6',
+        'glass bottom-toast fixed right-4 z-30 inline-flex size-11 items-center justify-center rounded-full text-ink transition-all focus-ring',
         visible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
       )}
       style={{ marginRight: 'var(--sar)' }}
     >
-      <ArrowUp className="size-5" />
+      <ArrowUp className="size-5" strokeWidth={2.4} />
     </button>
   )
 }

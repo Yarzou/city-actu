@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { Notice } from '@/components/ui/Notice'
 import type { PasskeyFailure } from '@/lib/auth/passkey'
 
 /**
@@ -7,17 +7,9 @@ import type { PasskeyFailure } from '@/lib/auth/passkey'
  * gris et non en rouge.
  */
 export function PasskeyNotice({ failure, className }: { failure: PasskeyFailure; className?: string }) {
-  const isError = failure.kind === 'error'
   return (
-    <p
-      role={isError ? 'alert' : 'status'}
-      className={cn(
-        'mt-3 rounded-lg border px-3 py-2 text-sm',
-        isError ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-200 bg-gray-50 text-gray-600',
-        className
-      )}
-    >
+    <Notice tone={failure.kind === 'error' ? 'danger' : 'neutral'} className={className}>
       {failure.message}
-    </p>
+    </Notice>
   )
 }

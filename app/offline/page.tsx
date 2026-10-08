@@ -1,11 +1,12 @@
+import { WifiOff } from 'lucide-react'
+import { EmptyState } from '@/components/ui/EmptyState'
+
 export default function OfflinePage() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
-      <span className="text-5xl mb-4">📡</span>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Pas de connexion</h1>
-      <p className="text-gray-500 max-w-sm">
+    <div className="mx-auto flex min-h-[70vh] max-w-md items-center px-4 pt-safe">
+      <EmptyState icon={WifiOff} title="Pas de connexion">
         Vous êtes hors ligne. Reconnectez-vous à Internet pour accéder aux dernières actualités.
-      </p>
+      </EmptyState>
     </div>
   )
 }

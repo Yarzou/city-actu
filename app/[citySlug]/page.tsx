@@ -4,7 +4,8 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getSessionIsAdmin, getSessionUser } from '@/lib/auth/session'
 import { resolveFeedContext, queryArticles, queryMonthEvents, type FeedContext } from '@/lib/feed/query'
-import { parisHorizonISO } from '@/lib/feed/paris-time'
+import { formatParisTodayLabel, parisHorizonISO } from '@/lib/feed/paris-time'
+import { getCurrentParisWeekRangeLabel } from '@/lib/week'
 import { parseDateParam, serializeRangeBounds, type DateRange } from '@/lib/feed/date-params'
 import { monthBounds, parseMonthParam, parseViewParam, serializeMonth, type CivilMonth, type FeedView } from '@/lib/feed/view-params'
 import { parseCategoryParam } from '@/lib/feed/category-params'
@@ -61,8 +62,8 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
 
   // Étage 1 — la coquille. Deux requêtes courtes seulement : sans elles on ne peut ni
   // titrer la page ni dessiner les pastilles. Tout le reste part en streaming. La
-  // session vient du cache par requête (`lib/auth/session.ts`), déjà rempli par le
-  // layout racine : aucun second aller-retour vers le serveur Auth.
+  // session vient du cache par requête (`lib/auth/session.ts`) : `getSessionIsAdmin`,
+  // plus bas, la relit sans second aller-retour vers le serveur Auth.
   const [{ data: categories }, user] = await Promise.all([
     supabase.from('categories').select('*').order('display_order').order('name'),
     getSessionUser(),
@@ -134,6 +135,8 @@ export default async function CityPage(props: PageProps<'/[citySlug]'>) {
       userId={user?.id ?? null}
       isAdmin={isAdmin}
       horizon={horizon}
+      todayLabel={formatParisTodayLabel()}
+      weekLabel={getCurrentParisWeekRangeLabel()}
       initialDigest={initialDigest}
     >
       {needsFeed && (

@@ -1,10 +1,10 @@
 'use client'
 
-import { memo, useRef, useLayoutEffect, useState } from 'react'
+import { memo, useRef, useLayoutEffect, useState, type ReactNode } from 'react'
 import Image from 'next/image'
-import { ExternalLink, ChevronDown, ChevronUp, Trash2, CalendarPlus, CalendarX, MapPin, Share2 } from 'lucide-react'
+import { CalendarPlus, CalendarX, Clock, EyeOff, MapPin, Share } from 'lucide-react'
 import { cn, extractLocality, formatEventDateRange } from '@/lib/utils'
-import { CATEGORY_COLORS } from '@/lib/types'
+import { categoryInkStyle, categoryStyle, type CategoryStyle } from '@/lib/category-style'
 import type { FeedArticle } from '@/lib/types'
 import { FavoriteButton } from './FavoriteButton'
 
@@ -37,35 +37,50 @@ interface ArticleCardProps {
   scrollRestoreCount?: number
   /** Charge l'image sans attendre le lazy-loading : à réserver à la carte du LCP. */
   priority?: boolean
+  /**
+   * `compact` (défaut) : texte à gauche, vignette carrée à droite — la carte d'un fil
+   * d'actualités, dense, qui laisse voir plusieurs événements par écran.
+   * `hero` : photo en 16/9 en tête, catégorie, horaire et favori posés dessus en verre.
+   * Réservée à la première carte illustrée d'une journée : elle donne le rythme du fil
+   * sans en faire une galerie. Sans image (absente ou refusée), retombe en compacte.
+   */
+  variant?: 'compact' | 'hero'
 }
 
 const EXTERNAL_LINK_SCROLL_KEY = 'ville-actu:external-link-scroll'
 
-/**
- * Boîte des actions de pied de carte : 40px de côté et 8px d'écart.
- *
- * Ces icônes faisaient 28px avec 4px entre elles, gonflées à 44px par une règle CSS
- * globale désormais supprimée. Résultat : trois à quatre cibles de 44px séparées de
- * 4px, alignées sur le bord droit de la carte — favori, agenda, masquer et lien
- * externe se touchaient au pouce.
- */
-const ACTION_BUTTON = 'inline-flex items-center justify-center size-10 rounded-lg transition-colors focus-ring'
+/** Actions de pied de carte : 40 px de côté, en cercle. */
+const ACTION_BUTTON =
+  'inline-flex size-10 items-center justify-center rounded-full text-ink-muted transition-colors focus-ring'
 
 /**
- * Quatre colonnes au-delà de 1280px, trois au-delà de 1024, deux au-delà de 640,
- * une en dessous. Sans `sizes`, `fill` fait supposer `100vw` à Next et le
- * navigateur télécharge une image dimensionnée pour la largeur totale de l'écran.
+ * Largeur réelle de la photo d'une grande carte : une colonne sur mobile, puis la
+ * grille desktop (deux, trois, quatre colonnes). Sans `sizes`, `fill` fait supposer
+ * `100vw` à Next et le navigateur télécharge une image pour toute la largeur d'écran.
  */
-const CARD_IMAGE_SIZES =
+const HERO_IMAGE_SIZES =
   '(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw'
 
-// Mémoïsé : sans ça toute la grille se re-rendait à chaque changement d'état du feed
-// (frappe dans la recherche, bandeau de feedback…), et chaque carte refait une mesure
+/** Tuile de catégorie arrondie, icône blanche : le repère de couleur de la carte. */
+function CategoryTile({ style, className }: { style: CategoryStyle; className?: string }) {
+  const Icon = style.icon
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('inline-flex size-[18px] shrink-0 items-center justify-center rounded-[5px] text-white', className)}
+      style={{ backgroundColor: style.color }}
+    >
+      <Icon className="size-3" strokeWidth={2.4} />
+    </span>
+  )
+}
+
+// Mémoïsé : sans ça toute la liste se re-rendait à chaque changement d'état du feed
+// (frappe dans la recherche, bandeau de retour…), et chaque carte refait une mesure
 // DOM synchrone dans son useLayoutEffect.
-export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, onFavoriteToggled, onFeedback, scrollRestoreContext, scrollRestoreCount, priority = false }: ArticleCardProps) {
-  const categorySlug = article.category?.slug ?? ''
-  const categoryColor = CATEGORY_COLORS[categorySlug] ?? 'bg-gray-100 text-gray-800'
-  const categoryIcon  = article.category?.icon || '📰'
+export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, onFavoriteToggled, onFeedback, scrollRestoreContext, scrollRestoreCount, priority = false, variant = 'compact' }: ArticleCardProps) {
+  const style = categoryStyle(article.category?.slug)
+  const categoryName = article.category?.name ?? 'Actualité'
 
   const displayDate = article.published_at
     ? formatEventDateRange(article.published_at, article.event_end_date ?? null)
@@ -83,10 +98,13 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
 
   const [expanded, setExpanded] = useState(false)
   const [isClamped, setIsClamped] = useState(false)
-  // Une source qui refuse le hotlink laissait une bande grise de 160px en tête de
-  // carte, indiscernable d'une image qui n'a pas fini de charger.
+  // Une source qui refuse le hotlink laissait une bande grise à la place de la photo,
+  // indiscernable d'une image qui n'a pas fini de charger.
   const [imageFailed, setImageFailed] = useState(false)
   const textRef = useRef<HTMLParagraphElement>(null)
+
+  const hasImage = Boolean(article.image_url) && !imageFailed
+  const isHero = variant === 'hero' && hasImage
 
   useLayoutEffect(() => {
     const el = textRef.current
@@ -132,198 +150,206 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
     }
   }
 
-  return (
-    <article className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
-      {/* Image */}
-      {article.image_url && !imageFailed && (
-        // 16/9 sur mobile plutôt qu'une hauteur fixe : pleine largeur, `h-40`
-        // donnait un cadre de ~4:1 qui décapitait les sujets. La grille desktop, en
-        // colonnes étroites, garde la hauteur fixe pour que les cartes s'alignent.
-        <div className="relative aspect-[16/9] sm:aspect-auto sm:h-40 bg-gray-100 shrink-0">
-          <Image
-            src={article.image_url}
-            // Vide, et non le titre : le `<h2>` juste en dessous porte déjà ce texte,
-            // un lecteur d'écran l'annoncerait deux fois de suite.
-            alt=""
-            fill
-            sizes={CARD_IMAGE_SIZES}
-            className="object-cover"
-            priority={priority}
-            onError={() => setImageFailed(true)}
-          />
-        </div>
-      )}
+  /**
+   * Lien vers la source. Le titre est le lien principal ; la photo en est un second,
+   * hors tabulation et masqué aux lecteurs d'écran pour ne pas annoncer deux fois la
+   * même cible. L'ancienne icône « lien externe » du pied de carte a disparu : le
+   * titre, puis la photo, sont les gestes qu'on fait d'instinct.
+   */
+  function sourceLink(children: ReactNode, className: string, decorative = false) {
+    return (
+      <a
+        href={article.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={rememberScrollBeforeExternalOpen}
+        className={className}
+        {...(decorative ? { tabIndex: -1, 'aria-hidden': true } : {})}
+      >
+        {children}
+      </a>
+    )
+  }
 
-      <div className="p-4 flex flex-col flex-1 gap-2">
-        {/* Category badge */}
-        <div className="flex items-center justify-between gap-2">
-          <span className={cn('inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full', categoryColor)}>
-            <span aria-hidden="true">{categoryIcon}</span>
-            {article.category?.name ?? 'Actualité'}
+  const image = hasImage ? (
+    <Image
+      src={article.image_url!}
+      // Vide, et non le titre : le `<h2>` porte déjà ce texte, un lecteur d'écran
+      // l'annoncerait deux fois de suite.
+      alt=""
+      fill
+      sizes={isHero ? HERO_IMAGE_SIZES : '84px'}
+      className="object-cover"
+      // `priority` est déprécié depuis Next 16 : `loading="eager"` et `fetchPriority`
+      // portent la même intention, sans préchargement forcé dans le <head>.
+      loading={priority ? 'eager' : undefined}
+      fetchPriority={priority ? 'high' : undefined}
+      onError={() => setImageFailed(true)}
+    />
+  ) : null
+
+  const categoryLine = (
+    <p className="cat-ink flex min-w-0 items-center gap-1.5 text-footnote font-semibold" style={categoryInkStyle(style)}>
+      <CategoryTile style={style} />
+      <span className="truncate">{categoryName}</span>
+    </p>
+  )
+
+  const dateLine = displayDate ? (
+    <p className="flex items-center gap-1.5 text-subhead text-ink-muted">
+      <Clock className="size-[15px] shrink-0" aria-hidden="true" />
+      <time dateTime={dateTimeAttr}>{displayDate}</time>
+    </p>
+  ) : null
+
+  /*
+    Lieu — rendu seulement quand il est renseigné, donc sans effet sur les cartes des
+    sources qui ne le fournissent pas. Il compte surtout dans l'onglet « Autour de la
+    Chap' », où les événements viennent des communes voisines.
+  */
+  const placeLine = article.location ? (
+    <p className="flex min-w-0 items-center gap-1.5 text-subhead text-ink-muted" title={article.location}>
+      <MapPin className="size-[15px] shrink-0" aria-hidden="true" />
+      {localityPrefix && <span className="truncate">{localityPrefix},</span>}
+      {locality && (onLocationSearch ? (
+        // Un vrai <button> et non un lien : la recherche se fait sans quitter la page
+        // (écriture d'URL par pushState). `py-1 -my-1` agrandit la cible au doigt sans
+        // écarter la ligne.
+        <button
+          type="button"
+          onClick={() => onLocationSearch(locality)}
+          aria-label={`Rechercher les actualités à ${locality}`}
+          className="-my-1 max-w-full shrink-0 truncate rounded py-1 text-accent focus-ring"
+        >
+          {locality}
+        </button>
+      ) : (
+        <span className="max-w-full shrink-0 truncate">{locality}</span>
+      ))}
+    </p>
+  ) : null
+
+  return (
+    <article className="flex flex-col overflow-hidden rounded-[20px] bg-card shadow-lift">
+      {isHero && (
+        <div className="relative aspect-[16/9] shrink-0 bg-fill-soft">
+          {sourceLink(image, 'absolute inset-0 block', true)}
+          {/* Pastilles de verre posées sur la photo : décoratives au toucher (le doigt
+              traverse vers le lien), lues par les lecteurs d'écran. */}
+          <span className="glass pointer-events-none absolute left-3 top-3 inline-flex h-8 max-w-[calc(100%-5rem)] items-center gap-1.5 rounded-full pl-1.5 pr-3 text-footnote font-semibold text-ink">
+            <CategoryTile style={style} className="size-5 rounded-full" />
+            <span className="truncate">{categoryName}</span>
           </span>
           {displayDate && (
-            // `text-gray-500` et non 400 : sur blanc, gray-400 tombe à ~2.85:1, sous
-            // le minimum de 4.5:1 exigé pour du texte.
-            <time className="text-xs text-gray-500 shrink-0" dateTime={dateTimeAttr}>
-              {displayDate}
-            </time>
+            <span className="glass pointer-events-none absolute bottom-3 left-3 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-footnote font-semibold text-ink">
+              <Clock className="size-[15px] shrink-0" aria-hidden="true" />
+              <time dateTime={dateTimeAttr}>{displayDate}</time>
+            </span>
           )}
-        </div>
-
-        {/*
-          Titre cliquable : c'est le premier geste d'un lecteur, et il n'aboutissait
-          qu'en trouvant la petite icône de lien externe en pied de carte. Même
-          destination, même mémorisation du scroll pour le retour.
-        */}
-        <h2 className="font-semibold text-gray-900 text-base leading-snug line-clamp-2">
-          <a
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={rememberScrollBeforeExternalOpen}
-            className="rounded transition-colors hover:text-brand-700 focus-ring"
-          >
-            {article.title}
-          </a>
-        </h2>
-
-        {/*
-          Lieu — rendu seulement quand il est renseigné, donc sans effet sur les cartes
-          des sources qui ne le fournissent pas. Il compte surtout dans l'onglet
-          « Autour de la Chap' », où les événements viennent des communes voisines.
-
-          `title` en plus de `truncate` : la valeur est un « salle, adresse, ville »
-          construit par le fetcher open data, souvent plus large qu'une colonne de la
-          grille, et c'est la fin — la commune — qui est coupée.
-        */}
-        {article.location && (
-          <p className="flex min-w-0 items-center gap-1 text-xs text-gray-500" title={article.location}>
-            <MapPin className="size-3 shrink-0" aria-hidden="true" />
-            {localityPrefix && <span className="truncate">{localityPrefix},</span>}
-            {locality && (onLocationSearch ? (
-              // Un vrai <button> et non un lien : la carte n'est pas enveloppée dans un
-              // <a>, il n'y a donc rien à imbriquer, et la recherche se fait sans quitter
-              // la page (écriture d'URL par pushState, comme les pastilles de catégorie).
-              // `py-1 -my-1` agrandit la cible au doigt sans écarter la ligne.
-              <button
-                type="button"
-                onClick={() => onLocationSearch(locality)}
-                aria-label={`Rechercher les actualités à ${locality}`}
-                className="-my-1 max-w-full shrink-0 truncate rounded py-1 underline decoration-dotted underline-offset-2 transition-colors hover:text-brand-600 focus-ring"
-              >
-                {locality}
-              </button>
-            ) : (
-              <span className="max-w-full shrink-0 truncate">{locality}</span>
-            ))}
-          </p>
-        )}
-
-        {/* Preview */}
-        {article.content_preview && (
-          <div className="flex-1">
-            <p
-              ref={textRef}
-              className={cn(
-                'text-sm text-gray-600',
-                !expanded && 'line-clamp-3'
-              )}
-            >
-              {article.content_preview}
-            </p>
-            {(isClamped || expanded) && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpanded(v => !v) }}
-                aria-expanded={expanded}
-                className="mt-1 inline-flex items-center gap-0.5 py-1 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors focus-ring"
-              >
-                {expanded
-                  ? <><ChevronUp className="size-3" /> Voir moins</>
-                  : <><ChevronDown className="size-3" /> Lire la suite</>
-                }
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Source + Actions */}
-        <div className="flex items-center justify-between gap-2 mt-auto pt-2 border-t border-gray-100">
-          <span className="text-xs text-gray-500 truncate">{article.source?.name}</span>
-          <div className="flex items-center gap-2 shrink-0 -mr-1">
-            {userId && (
+          {userId && (
+            <span className="absolute right-3 top-3">
               <FavoriteButton
                 articleId={article.id}
                 userId={userId}
                 initialFavorited={isFavorited}
                 onToggled={onFavoriteToggled}
                 onError={onFeedback ? (msg) => onFeedback({ ok: false, msg }) : undefined}
+                variant="glass"
               />
-            )}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className={cn('flex gap-3 px-4', isHero ? 'pt-3' : 'pt-3.5')}>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {!isHero && categoryLine}
+          {/*
+            Titre cliquable : c'est le premier geste d'un lecteur. Même destination que
+            la photo, même mémorisation du scroll pour le retour.
+          */}
+          <h2 className="line-clamp-3 text-headline text-ink">
+            {sourceLink(article.title, 'rounded transition-colors hover:text-accent focus-ring')}
+          </h2>
+          {!isHero && dateLine}
+          {placeLine}
+        </div>
+        {!isHero && hasImage && sourceLink(
+          image,
+          'relative size-[84px] shrink-0 overflow-hidden rounded-[14px] bg-fill-soft',
+          true
+        )}
+      </div>
+
+      {/* Aperçu */}
+      {article.content_preview && (
+        <div className="px-4 pt-1">
+          <p ref={textRef} className={cn('text-subhead text-ink-muted', !expanded && 'line-clamp-2')}>
+            {article.content_preview}
+          </p>
+          {(isClamped || expanded) && (
             <button
               type="button"
-              onClick={share}
-              className={cn(ACTION_BUTTON, 'text-gray-500 hover:text-brand-600 hover:bg-brand-50')}
-              aria-label="Partager"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpanded(v => !v) }}
+              aria-expanded={expanded}
+              className="py-1 text-subhead font-medium text-accent focus-ring"
             >
-              <Share2 className="size-4" />
+              {expanded ? 'Voir moins' : 'Lire la suite'}
             </button>
-            {/*
-              Lien simple, sans target="_blank" : sur iOS la navigation déclenche le
-              flux natif « Ajouter à Calendrier » sans réellement quitter la page, et
-              sur Android le fichier est confié à Google Agenda ou à l'appli par défaut.
-
-              Il n'appelle volontairement pas rememberScrollBeforeExternalOpen : ce
-              n'est pas un départ vers l'extérieur, il ne doit pas armer la
-              restauration de scroll.
-            */}
-            {article.published_at ? (
-              <a
-                href={`/api/calendar/${article.id}.ics`}
-                className={cn(ACTION_BUTTON, 'text-gray-500 hover:text-brand-600 hover:bg-brand-50')}
-                aria-label="Ajouter à mon agenda"
-              >
-                <CalendarPlus className="size-4" />
-              </a>
-            ) : (
-              // Article sans date : le bouton reste en place, barré, plutôt que de
-              // disparaître — l'absence laissait croire à un oubli, surtout dans les
-              // favoris où beaucoup d'actus de la mairie n'ont pas de date.
-              //
-              // Un <span> et non un <button disabled> : les éléments désactivés ne
-              // reçoivent pas les événements souris, donc l'infobulle qui explique
-              // pourquoi ne s'afficherait pas de façon fiable. `aria-label` double le
-              // `title` car ce dernier ne s'affiche jamais au toucher.
-              <span
-                role="img"
-                aria-label="Pas d'agenda possible : la source ne donne pas de date pour cette actu"
-                className={cn(ACTION_BUTTON, 'text-gray-300 cursor-not-allowed')}
-                title="Pas d'agenda possible : la source ne donne pas de date pour cette actu"
-              >
-                <CalendarX className="size-4" />
-              </span>
-            )}
-            {canDelete && onDelete && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(article.id) }}
-                disabled={deleting}
-                className={cn(ACTION_BUTTON, 'text-red-500 hover:text-red-700 hover:bg-red-50 disabled:opacity-50')}
-                aria-label="Masquer cette actu"
-              >
-                <Trash2 className={cn('size-4', deleting && 'animate-pulse')} />
-              </button>
-            )}
-            <a
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={rememberScrollBeforeExternalOpen}
-              className={cn(ACTION_BUTTON, 'text-gray-500 hover:text-brand-600 hover:bg-brand-50')}
-              aria-label="Voir l'article original"
-            >
-              <ExternalLink className="size-4" />
-            </a>
-          </div>
+          )}
         </div>
+      )}
+
+      {/* Source + actions */}
+      <div className="mt-auto flex items-center gap-1 py-1.5 pl-4 pr-2">
+        <span className="min-w-0 flex-1 truncate text-footnote text-ink-muted">{article.source?.name}</span>
+        {/*
+          Lien simple, sans target="_blank" : sur iOS la navigation déclenche le flux
+          natif « Ajouter à Calendrier » sans réellement quitter la page, et sur Android
+          le fichier est confié à Google Agenda ou à l'appli par défaut. Il n'arme pas la
+          restauration de scroll : ce n'est pas un départ vers l'extérieur.
+        */}
+        {article.published_at ? (
+          <a href={`/api/calendar/${article.id}.ics`} className={cn(ACTION_BUTTON, 'hover:text-accent')} aria-label="Ajouter à mon agenda">
+            <CalendarPlus className="size-5" />
+          </a>
+        ) : (
+          // Article sans date : le bouton reste en place, barré, plutôt que de
+          // disparaître — l'absence laissait croire à un oubli. Un <span> et non un
+          // <button disabled> : un élément désactivé ne reçoit pas les événements
+          // souris, l'infobulle ne s'afficherait pas de façon fiable.
+          <span
+            role="img"
+            aria-label="Pas d'agenda possible : la source ne donne pas de date pour cette actu"
+            className={cn(ACTION_BUTTON, 'cursor-not-allowed text-ink-faint opacity-60')}
+            title="Pas d'agenda possible : la source ne donne pas de date pour cette actu"
+          >
+            <CalendarX className="size-5" />
+          </span>
+        )}
+        <button type="button" onClick={share} className={cn(ACTION_BUTTON, 'hover:text-accent')} aria-label="Partager">
+          <Share className="size-5" />
+        </button>
+        {canDelete && onDelete && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(article.id) }}
+            disabled={deleting}
+            className={cn(ACTION_BUTTON, 'text-danger disabled:opacity-50')}
+            aria-label="Masquer cette actu"
+          >
+            <EyeOff className={cn('size-5', deleting && 'animate-pulse')} />
+          </button>
+        )}
+        {userId && !isHero && (
+          <FavoriteButton
+            articleId={article.id}
+            userId={userId}
+            initialFavorited={isFavorited}
+            onToggled={onFavoriteToggled}
+            onError={onFeedback ? (msg) => onFeedback({ ok: false, msg }) : undefined}
+          />
+        )}
       </div>
     </article>
   )

@@ -1,5 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
+import { buttonClass } from '@/components/ui/Button'
+
 interface ConfirmDialogProps {
   open: boolean
   title: string
@@ -11,6 +14,10 @@ interface ConfirmDialogProps {
   onCancel: () => void
 }
 
+/**
+ * Alerte de confirmation façon iOS : carte de verre dense au centre, fond assombri,
+ * deux boutons capsule. Échap annule.
+ */
 export function ConfirmDialog({
   open,
   title,
@@ -21,36 +28,37 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, onCancel])
+
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+      <div className="absolute inset-0 bg-scrim" onClick={onCancel} aria-hidden="true" />
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
-      {/* Panel */}
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-        <div>
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          <p className="text-sm text-gray-500 mt-1">{message}</p>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
-          >
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        aria-describedby="confirm-message"
+        className="glass glass-strong relative w-full max-w-xs rounded-[26px] p-5 text-center"
+      >
+        <h2 id="confirm-title" className="text-headline text-ink">{title}</h2>
+        <p id="confirm-message" className="mt-1.5 text-subhead text-ink-muted">{message}</p>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={onCancel} className={buttonClass('tinted', 'md', 'flex-1')}>
             {cancelLabel}
           </button>
           <button
+            type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              destructive
-                ? 'bg-red-600 text-white hover:bg-red-700'
-                : 'bg-brand-600 text-white hover:bg-brand-700'
-            }`}
+            className={buttonClass('primary', 'md', destructive ? 'flex-1 bg-danger-fill' : 'flex-1')}
           >
             {confirmLabel}
           </button>

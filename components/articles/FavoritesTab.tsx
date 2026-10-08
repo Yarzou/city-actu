@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
+import { FEED_LIST_CLASSES } from './FeedSkeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { buttonClass } from '@/components/ui/Button'
 import type { Article as ArticleType } from '@/lib/types'
 
 interface FavoritesTabProps {
@@ -85,7 +88,7 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
 
   if (state === 'loading') {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
+      <div className={FEED_LIST_CLASSES} aria-hidden="true">
         {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
       </div>
     )
@@ -93,62 +96,47 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
 
   if (state === 'unauthenticated') {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-        <Heart className="size-12 text-gray-300 mb-4" />
-        <h2 className="text-lg font-semibold text-gray-700 mb-2">Connectez-vous pour voir vos favoris</h2>
-        <p className="text-sm text-gray-500 mb-6 max-w-xs">
-          Sauvegardez les articles qui vous intéressent et retrouvez-les ici.
-        </p>
-        <Link
-          href="/auth/login"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-        >
-          Se connecter
-        </Link>
-      </div>
+      <EmptyState
+        icon={Heart}
+        title="Connectez-vous pour garder vos favoris"
+        action={
+          <Link href="/auth/login" className={buttonClass('primary', 'md', 'px-6')}>
+            Se connecter
+          </Link>
+        }
+      >
+        Touchez le cœur d&apos;une actu pour la retrouver ici, sur tous vos appareils.
+      </EmptyState>
     )
   }
 
   if (state === 'error') {
     return (
-      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-6 py-12 text-center">
-        <TriangleAlert className="mx-auto mb-3 size-8 text-red-500" />
-        <p className="font-medium text-red-800">Impossible de charger vos favoris</p>
-        <p className="mt-1 text-sm text-red-600">Vérifiez votre connexion, puis réessayez.</p>
-        <button
-          type="button"
-          onClick={retry}
-          className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-red-300 bg-white px-5 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 focus-ring"
-        >
-          Réessayer
-        </button>
-      </div>
+      <EmptyState
+        icon={TriangleAlert}
+        tone="danger"
+        title="Impossible de charger vos favoris"
+        action={<button type="button" onClick={retry} className={buttonClass('secondary', 'md')}>Réessayer</button>}
+      >
+        Vérifiez votre connexion, puis réessayez.
+      </EmptyState>
     )
   }
 
   if (favorites.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-        <Heart className="size-12 text-gray-300 mb-4" />
-        <p className="font-medium text-gray-600">Aucun favori pour l&apos;instant</p>
-        <p className="text-sm text-gray-500 mt-1">
-          Appuyez sur <span aria-hidden="true">❤️</span><span className="sr-only">le cœur</span> sur un article pour l&apos;enregistrer ici.
-        </p>
-      </div>
+      <EmptyState icon={Heart} title="Aucun favori pour l’instant">
+        Touchez le cœur d&apos;une actu pour l&apos;enregistrer ici.
+      </EmptyState>
     )
   }
 
   return (
-    <div className="mt-4">
-      {feedback && (
-        <p role="status" className={cn('mb-4 text-sm', feedback.ok ? 'text-brand-700' : 'text-red-600')}>
-          {feedback.msg}
-        </p>
-      )}
-      <p className="mb-3 text-xs text-gray-500">
+    <div className="flex flex-col gap-3">
+      <p className="text-footnote text-ink-muted">
         {favorites.length} {favorites.length > 1 ? 'favoris' : 'favori'}
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className={FEED_LIST_CLASSES}>
         {favorites.map((article) => (
           <ArticleCard
             key={article.id}
@@ -160,6 +148,14 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
           />
         ))}
       </div>
+      {/* Retour d'une action de carte : la même pastille de verre que dans le fil. */}
+      {feedback && (
+        <div role="status" className="bottom-toast pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4">
+          <p className={cn('glass glass-strong rounded-full px-4 py-2.5 text-subhead font-medium', feedback.ok ? 'text-ink' : 'text-danger')}>
+            {feedback.msg}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

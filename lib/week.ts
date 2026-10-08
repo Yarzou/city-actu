@@ -79,6 +79,23 @@ export function getCurrentParisWeekEndUtcIso(now = new Date()): string {
   return parisWeekMondayUtc(now, 1).toISOString()
 }
 
+/**
+ * « Du 5 au 11 octobre », « Du 28 septembre au 4 octobre » : la semaine en cours,
+ * lundi à dimanche, en dates civiles de Paris. Sur-titre de l'onglet « Résumé ».
+ */
+export function getCurrentParisWeekRangeLabel(now = new Date()): string {
+  const monday = parisWeekMondayUtc(now, 0)
+  // Midi le dimanche : à l'abri des changements d'heure, toujours le bon jour civil.
+  const sunday = new Date(monday.getTime() + 6 * 24 * 3600 * 1000 + 12 * 3600 * 1000)
+  const day = new Intl.DateTimeFormat('fr-FR', { timeZone: PARIS_TZ, day: 'numeric' })
+  const dayMonth = new Intl.DateTimeFormat('fr-FR', { timeZone: PARIS_TZ, day: 'numeric', month: 'long' })
+  const month = new Intl.DateTimeFormat('fr-FR', { timeZone: PARIS_TZ, month: 'numeric' })
+  // Lundi à midi pour la même raison : minuit de Paris vaut 22 h ou 23 h la veille en UTC.
+  const mondayNoon = new Date(monday.getTime() + 12 * 3600 * 1000)
+  const sameMonth = month.format(mondayNoon) === month.format(sunday)
+  return `Du ${(sameMonth ? day : dayMonth).format(mondayNoon)} au ${dayMonth.format(sunday)}`
+}
+
 export function getCurrentParisDateLabel(now = new Date()): string {
   return new Intl.DateTimeFormat('fr-FR', {
     timeZone: PARIS_TZ,

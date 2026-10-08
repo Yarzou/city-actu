@@ -24,15 +24,15 @@ export default function GlobalError({
           justifyContent: 'center',
           padding: '2rem',
           fontFamily: 'system-ui, sans-serif',
-          background: '#f9fafb',
-          color: '#111827',
+          background: '#f2f2f7',
+          color: '#1c1c1e',
         }}
       >
         <div style={{ maxWidth: '28rem', textAlign: 'center' }}>
           <h1 style={{ fontSize: '1.25rem', margin: '0 0 0.5rem' }}>
             Ville Actu est momentanément indisponible
           </h1>
-          <p style={{ fontSize: '0.875rem', color: '#4b5563', margin: '0 0 1.5rem' }}>
+          <p style={{ fontSize: '0.875rem', color: '#6c6c70', margin: '0 0 1.5rem' }}>
             Réessayez dans quelques instants.
           </p>
           <button
@@ -43,7 +43,7 @@ export default function GlobalError({
               padding: '0.5rem 1.25rem',
               borderRadius: '0.75rem',
               border: 'none',
-              background: '#16a34a',
+              background: '#0e6f8c',
               color: '#fff',
               fontSize: '0.875rem',
               fontWeight: 500,
@@ -53,7 +53,7 @@ export default function GlobalError({
             Réessayer
           </button>
           {error.digest && (
-            <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+            <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#8e8e93' }}>
               Référence : {error.digest}
             </p>
           )}

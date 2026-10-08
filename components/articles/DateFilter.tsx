@@ -1,13 +1,14 @@
 'use client'
 
-import { CalendarDays } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { CalendarDays, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { chipClass } from '@/components/ui/Chip'
 import {
   DATE_PRESETS,
   DATE_PRESET_LABELS,
   buildPresetRange,
   buildSingleDayRange,
-  type DatePreset,
   type DateRange,
 } from '@/lib/feed/date-params'
 import { parseCivilDate } from '@/lib/feed/paris-time'
@@ -23,91 +24,116 @@ interface DateFilterProps {
   onChange: (range: DateRange | null) => void
 }
 
-/** Pastille : 44px de haut par vrai padding, plus par une règle CSS globale. */
-const PILL_BASE =
-  'shrink-0 snap-start min-h-11 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm border transition-colors focus-ring'
-const PILL_IDLE =
-  'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-const PILL_ACTIVE = 'bg-brand-600 text-white border-brand-600'
-
+/**
+ * Filtre de date : une seule pastille « Quand » qui ouvre un menu en verre, au lieu
+ * de la rangée de quatre pastilles d'avant (Aujourd'hui, Ce weekend, 7 jours, Date…).
+ * Elle libère une ligne d'en-tête, et la pastille dit en permanence ce qui est
+ * filtré (« Ce weekend », « 12/10/2026 ») — la rangée, elle, demandait de repérer
+ * laquelle était allumée.
+ *
+ * Même contrat qu'avant (`value` / `onChange`), donc rien ne change pour le feed ni
+ * pour l'URL (`?d=`).
+ */
 export function DateFilter({ value, onChange }: DateFilterProps) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
   const activePreset = DATE_PRESETS.find((p) => value?.label === DATE_PRESET_LABELS[p]) ?? null
   const isCustomDay = Boolean(value) && activePreset === null
 
-  function handlePreset(preset: DatePreset) {
-    if (activePreset === preset) {
-      onChange(null)
-    } else {
-      onChange(buildPresetRange(preset))
+  // Fermeture au toucher hors du menu et à Échap, comme un menu iOS.
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  function choose(range: DateRange | null) {
+    setOpen(false)
+    onChange(range)
   }
 
   function handleDateInput(event: React.ChangeEvent<HTMLInputElement>) {
     const civil = parseCivilDate(event.target.value)
-    onChange(civil ? buildSingleDayRange(civil) : null)
+    choose(civil ? buildSingleDayRange(civil) : null)
   }
 
   return (
-    <div
-      className="edge-fade flex flex-nowrap snap-x snap-mandatory overflow-x-auto scrollbar-hide items-center gap-2 sm:flex-wrap sm:snap-none"
-      role="group"
-      aria-label="Filtrer par date"
-    >
-      {/*
-        Plus de pastille « × Ce weekend » : elle ne servait à rien, les préréglages se
-        désélectionnant déjà d'un second appui.
-      */}
-      {DATE_PRESETS.map((preset) => (
-        <button
-          key={preset}
-          type="button"
-          onClick={() => handlePreset(preset)}
-          aria-pressed={activePreset === preset}
-          className={cn(PILL_BASE, activePreset === preset ? PILL_ACTIVE : PILL_IDLE)}
-        >
-          {DATE_PRESET_LABELS[preset]}
-        </button>
-      ))}
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={chipClass(Boolean(value), 'pl-3')}
+      >
+        <CalendarDays className={cn('size-[17px]', !value && 'text-accent')} aria-hidden="true" />
+        {value?.label ?? 'Toutes les dates'}
+        <ChevronDown className={cn('size-4', value ? 'opacity-80' : 'text-ink-muted')} aria-hidden="true" />
+      </button>
 
-      {/*
-        Choix d'une date précise, sur tous les écrans. Cette pastille était en
-        `sm:hidden` au profit d'un mini-calendrier desktop que ses deux appelants
-        avaient fini par désactiver : au-delà de 640px, aucune date précise n'était
-        atteignable. Le mini-calendrier a été retiré, la pastille reste seule.
-
-        Pastille bistable, et c'est ce qui remplace la pastille × supprimée plus haut :
-        une date précise n'était annulable que par elle. Au repos, un `<input type="date">`
-        transparent est superposé au libellé — et non caché en `sr-only` puis ouvert par
-        `showPicker()`, méthode absente de plusieurs navigateurs mobiles, où le bouton
-        ne faisait alors strictement rien. Active, la pastille affiche la date et
-        redevient un simple bouton d'effacement : sans input par-dessus, l'appui ne
-        rouvre pas le sélecteur.
-      */}
-      {isCustomDay ? (
-        <button
-          type="button"
-          onClick={() => onChange(null)}
-          aria-pressed
-          aria-label={`Retirer le filtre du ${value?.label}`}
-          className={cn(PILL_BASE, PILL_ACTIVE)}
+      {open && (
+        <div
+          role="menu"
+          aria-label="Quand"
+          className="glass glass-strong absolute left-0 top-full z-30 mt-2 w-64 rounded-3xl py-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
         >
-          <CalendarDays className="size-4" />
-          {value?.label}
-        </button>
-      ) : (
-        <div className="relative shrink-0 snap-start">
-          <span aria-hidden="true" className={cn(PILL_BASE, PILL_IDLE)}>
-            <CalendarDays className="size-4" />
-            Date…
-          </span>
-          <input
-            type="date"
-            aria-label="Choisir une date précise"
-            onChange={handleDateInput}
-            className="absolute inset-0 size-full cursor-pointer opacity-0"
-          />
+          <MenuItem checked={!value} onSelect={() => choose(null)}>Toutes les dates</MenuItem>
+          {DATE_PRESETS.map((preset) => (
+            <MenuItem key={preset} checked={activePreset === preset} onSelect={() => choose(buildPresetRange(preset))}>
+              {DATE_PRESET_LABELS[preset]}
+            </MenuItem>
+          ))}
+          <div role="separator" className="my-1 h-2 bg-fill-soft/70" />
+          {/*
+            Date précise. Un `<input type="date">` transparent est superposé à la ligne —
+            et non caché puis ouvert par `showPicker()`, méthode absente de plusieurs
+            navigateurs mobiles, où l'appui ne faisait alors strictement rien.
+          */}
+          <label className="relative flex min-h-11 cursor-pointer items-center gap-2.5 px-4 text-body text-ink">
+            <span className="flex size-[18px] shrink-0 items-center justify-center text-accent">
+              {isCustomDay && <Check className="size-[18px]" strokeWidth={2.6} aria-hidden="true" />}
+            </span>
+            <span className={cn('flex-1', isCustomDay && 'font-semibold')}>
+              {isCustomDay ? value?.label : 'Choisir une date…'}
+            </span>
+            <CalendarDays className="size-5 text-ink-muted" aria-hidden="true" />
+            <input
+              type="date"
+              aria-label="Choisir une date précise"
+              onChange={handleDateInput}
+              className="absolute inset-0 size-full cursor-pointer opacity-0"
+            />
+          </label>
         </div>
       )}
     </div>
+  )
+}
+
+function MenuItem({ checked, onSelect, children }: { checked: boolean; onSelect: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className="flex min-h-11 w-full items-center gap-2.5 px-4 text-left text-body text-ink active:bg-fill-soft focus-ring"
+    >
+      <span className="flex size-[18px] shrink-0 items-center justify-center text-accent">
+        {checked && <Check className="size-[18px]" strokeWidth={2.6} aria-hidden="true" />}
+      </span>
+      <span className={cn(checked && 'font-semibold')}>{children}</span>
+    </button>
   )
 }

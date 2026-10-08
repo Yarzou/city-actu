@@ -1,19 +1,23 @@
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" aria-hidden="true">
-      <div className="mb-6">
-        <div className="h-8 w-56 rounded-lg bg-gray-200 animate-pulse" />
-        <div className="mt-2 h-4 w-48 rounded bg-gray-100 animate-pulse" />
+    // Même conteneur que page.tsx, pour que rien ne saute au remplacement.
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 pt-safe sm:px-6" aria-hidden="true">
+      {/* Grand titre de PageHeader : rangée de 44 px (bouton retour), titre de 41 px,
+          puis la ligne de l'adresse email. */}
+      <div className="flex flex-col">
+        <div className="flex h-11 items-center">
+          <div className="size-11 animate-pulse rounded-full bg-fill" />
+        </div>
+        <div className="mt-1 h-[41px] w-64 max-w-full animate-pulse rounded-lg bg-fill" />
+        <div className="mt-0.5 h-5 w-48 animate-pulse rounded bg-fill-soft" />
       </div>
-      {/* Silhouette du panneau d'administration : une barre d'actions puis une liste
-          de sources. Ce squelette imitait une grille de favoris, qui n'existe plus ici. */}
-      <div className="mb-4 flex gap-2">
-        <div className="h-11 w-32 rounded-lg bg-gray-100 animate-pulse" />
-        <div className="h-11 w-40 rounded-lg bg-gray-100 animate-pulse" />
-      </div>
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
+      {/* Silhouette du panneau d'administration : ses deux sections, repliées à
+          l'ouverture (« Gestion des sources », « Gestion des catégories »), chacune
+          une ligne de 52 px. Ce squelette imitait auparavant une barre d'actions et
+          une liste de sources, que le panneau n'affiche qu'une fois déplié. */}
+      <div className="flex flex-col gap-6">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="h-[52px] animate-pulse rounded-[14px] bg-fill-soft" />
         ))}
       </div>
     </div>

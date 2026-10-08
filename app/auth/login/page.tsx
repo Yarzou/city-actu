@@ -13,7 +13,10 @@ import {
   type PasskeyFailure,
 } from '@/lib/auth/passkey'
 import { PasskeyNotice } from '@/components/account/PasskeyNotice'
-import { Newspaper, Loader2, FingerprintPattern } from 'lucide-react'
+import { AuthShell, FieldGroup, FieldRow } from '@/components/auth/AuthShell'
+import { Button } from '@/components/ui/Button'
+import { Notice } from '@/components/ui/Notice'
+import { FingerprintPattern, ScanFace } from 'lucide-react'
 
 /**
  * `useSearchParams` impose une frontière `<Suspense>` : sans elle, tout l'arbre est
@@ -30,19 +33,9 @@ export default function LoginPage() {
 /** Coquille du repli : reprend la structure du formulaire pour éviter un saut de mise en page. */
 function LoginShell({ children }: { children?: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-brand-700 font-semibold text-xl mb-2">
-            <Newspaper className="size-6" />
-            Ville Actu
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Connexion</h1>
-          <p className="text-sm text-gray-500 mt-1">Accédez à vos favoris et alertes</p>
-        </div>
-        {children}
-      </div>
-    </div>
+    <AuthShell title="Ville Actu" subtitle="Gardez vos sorties en favori et recevez le résumé de la semaine.">
+      {children}
+    </AuthShell>
   )
 }
 
@@ -117,7 +110,7 @@ function LoginForm() {
 
   /**
    * Renvoi du lien de confirmation, sur l'adresse déjà saisie dans le formulaire —
-   * inutile de la redemander, le champ est juste au-dessus.
+   * inutile de la redemander, le champ est juste en dessous.
    *
    * Supabase répond de la même façon que l'adresse existe ou non, et que le compte soit
    * déjà confirmé ou non : c'est délibéré de sa part (ne pas révéler qui est inscrit), et
@@ -147,128 +140,94 @@ function LoginForm() {
     }
   }
 
-  if (step === 'offer') {
-    return (
-      <LoginShell>
-        <PasskeyOffer onDone={goHome} />
-      </LoginShell>
-    )
-  }
-
   return (
     <LoginShell>
       {linkError && !resent && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <Notice tone="warn">
           {linkError === 'lien' ? (
             <>
-              <p className="font-medium">Ce lien de confirmation n&apos;est plus valide.</p>
-              <p className="mt-1 text-amber-800">
+              <p className="font-semibold">Ce lien de confirmation n&apos;est plus valide.</p>
+              <p className="mt-1">
                 Il a peut-être déjà été utilisé ou expiré. Si votre compte est déjà
                 confirmé, connectez-vous simplement ci-dessous — sinon, faites-vous
                 renvoyer un lien.
               </p>
+              <Button variant="tinted" size="md" className="mt-3" onClick={handleResend} loading={resending}>
+                M&apos;envoyer un lien d&apos;accès
+              </Button>
+              {resendError && <p className="mt-2 text-danger">{resendError}</p>}
             </>
           ) : (
             <>
-              <p className="font-medium">La connexion n&apos;a pas pu être finalisée.</p>
-              <p className="mt-1 text-amber-800">
+              <p className="font-semibold">La connexion n&apos;a pas pu être finalisée.</p>
+              <p className="mt-1">
                 Ce lien devait être ouvert dans le navigateur qui a servi à s&apos;inscrire.
                 Votre compte est peut-être déjà confirmé : essayez de vous connecter
                 ci-dessous.
               </p>
             </>
           )}
-          {linkError === 'lien' && (
-            <>
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={resending}
-                className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-50 focus-ring"
-              >
-                {resending && <Loader2 className="size-4 animate-spin" />}
-                M&apos;envoyer un lien d&apos;accès
-              </button>
-              {resendError && <p className="mt-2 text-red-700">{resendError}</p>}
-            </>
-          )}
-        </div>
+        </Notice>
       )}
 
       {resent && (
-        <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-900">
-          <p className="font-medium">C&apos;est envoyé.</p>
+        <Notice tone="success">
+          <p className="font-semibold">C&apos;est envoyé.</p>
           <p className="mt-1">
             Si un compte existe pour <strong>{email}</strong>, un lien d&apos;accès vient
             d&apos;y être expédié. Il vous connecte directement et confirme votre adresse.
             Pensez à regarder vos indésirables.
           </p>
-        </div>
+        </Notice>
       )}
 
-      {passkeySupported && (
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={handlePasskeySignIn}
-            disabled={passkeyBusy}
-            className="w-full flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50 focus-ring"
-          >
-            {passkeyBusy
-              ? <Loader2 className="size-5 animate-spin" />
-              : <FingerprintPattern className="size-5 text-brand-600" />}
-            Se connecter avec l&apos;empreinte ou le visage
-          </button>
-          {passkeyNotice && <PasskeyNotice failure={passkeyNotice} />}
-          <div className="mt-4 flex items-center gap-3 text-xs text-gray-400" aria-hidden="true">
-            <span className="h-px flex-1 bg-gray-200" />
-            ou
-            <span className="h-px flex-1 bg-gray-200" />
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
-        )}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-          <input
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        {error && <Notice tone="danger">{error}</Notice>}
+        <FieldGroup>
+          <FieldRow
+            label="E-mail"
             type="email"
             required
+            autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             placeholder="vous@exemple.fr"
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-          <input
+          <FieldRow
+            label="Mot de passe"
             type="password"
             required
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+            placeholder="Requis"
           />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          {loading && <Loader2 className="size-4 animate-spin" />}
+        </FieldGroup>
+        <Button type="submit" loading={loading} disabled={passkeyBusy}>
           Se connecter
-        </button>
+        </Button>
       </form>
 
-      <p className="text-center text-sm text-gray-500 mt-4">
+      {/* Après le mot de passe, comme dans Fridge : l'appareil propose lui-même le
+          compte (identifiants découvrables), aucun champ à remplir. */}
+      {passkeySupported && (
+        <>
+          <Button variant="secondary" onClick={handlePasskeySignIn} loading={passkeyBusy} disabled={loading}>
+            {!passkeyBusy && <FingerprintPattern className="size-[22px]" aria-hidden="true" />}
+            Empreinte ou Face ID
+          </Button>
+          {passkeyNotice && <PasskeyNotice failure={passkeyNotice} />}
+        </>
+      )}
+
+      <p className="mt-1 text-center text-subhead text-ink-muted">
         Pas encore de compte ?{' '}
-        <Link href="/auth/signup" className="text-brand-600 hover:underline font-medium">
+        <Link href="/auth/signup" className="font-semibold text-accent focus-ring">
           Créer un compte
         </Link>
       </p>
+
+      {step === 'offer' && <PasskeyOffer onDone={goHome} />}
     </LoginShell>
   )
 }
@@ -279,11 +238,14 @@ function LoginForm() {
  * taper son mot de passe, donc celui où l'intérêt est le plus évident. « Plus tard »
  * est mémorisé pour cet appareil — la proposition ne revient pas à chaque connexion.
  * Les connexions par lien (confirmation, lien d'accès) ne passent pas par ici : ces
- * utilisateurs activent depuis « Mon compte ».
+ * utilisateurs activent depuis la page Compte.
+ *
+ * Une feuille de verre qui monte du bas de l'écran, à la manière d'iOS 26, sur le
+ * formulaire assombri.
  */
 function PasskeyOffer({ onDone }: { onDone: () => void }) {
   const [enrolling, setEnrolling] = useState(false)
-  // Levé dès l'appui sur « Plus tard » / « Continuer » et jamais rabaissé : la carte
+  // Levé dès l'appui sur « Plus tard » / « Continuer » et jamais rabaissé : la feuille
   // reste affichée le temps que la page ville arrive, et sans retour visuel l'appui
   // paraissait ne pas avoir été pris en compte.
   const [leaving, setLeaving] = useState(false)
@@ -318,46 +280,37 @@ function PasskeyOffer({ onDone }: { onDone: () => void }) {
   const busy = enrolling || leaving
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-      <div className="flex items-start gap-3">
-        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
-          <FingerprintPattern className="size-5" />
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-scrim" aria-hidden="true" />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="passkey-offer-title"
+        className="glass glass-strong relative m-2 flex w-full max-w-md flex-col items-center gap-3 rounded-[40px] px-6 pb-[calc(var(--sab)+20px)] pt-2.5 text-center sm:pb-6"
+      >
+        <span className="h-[5px] w-9 rounded-full bg-ink-faint/45" aria-hidden="true" />
+        <span className="mt-3 flex size-[88px] items-center justify-center rounded-full bg-accent-soft text-accent">
+          <ScanFace className="size-[46px]" strokeWidth={1.6} aria-hidden="true" />
         </span>
-        <div>
-          <h2 className="text-base font-semibold text-gray-900">Se connecter plus vite ?</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Utilisez Face ID ou votre empreinte sur cet appareil : plus besoin de mot de
-            passe la prochaine fois.
-          </p>
+        <h2 id="passkey-offer-title" className="text-[24px] font-bold leading-[30px] text-ink">Se connecter plus vite ?</h2>
+        <p className="text-body text-ink-muted">
+          La prochaine fois, votre visage ou votre empreinte suffira, sans mot de passe.
+          Ils restent sur cet appareil : Ville Actu ne les reçoit jamais.
+        </p>
+
+        {failure && <PasskeyNotice failure={failure} className="w-full text-left" />}
+
+        <div className="mt-2 flex w-full flex-col gap-1">
+          <Button onClick={activate} loading={enrolling} disabled={busy}>
+            {!enrolling && <FingerprintPattern className="size-[22px]" aria-hidden="true" />}
+            {failed ? 'Réessayer' : 'Activer Face ID ou l’empreinte'}
+          </Button>
+          <Button variant="plain" size="md" className="w-full" onClick={failed ? leave : later} loading={leaving} disabled={busy}>
+            {failed ? 'Continuer' : 'Plus tard'}
+          </Button>
         </div>
-      </div>
-
-      {failure && <PasskeyNotice failure={failure} />}
-
-      <div className="mt-5 flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={activate}
-          disabled={busy}
-          className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 focus-ring"
-        >
-          {enrolling && <Loader2 className="size-4 animate-spin" />}
-          {failed ? 'Réessayer' : 'Activer'}
-        </button>
-        <button
-          type="button"
-          onClick={failed ? leave : later}
-          disabled={busy}
-          className="w-full py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 focus-ring"
-        >
-          {leaving && <Loader2 className="size-4 animate-spin" />}
-          {failed ? 'Continuer' : 'Plus tard'}
-        </button>
-      </div>
-
-      <p className="mt-4 text-center text-xs text-gray-500">
-        Activable à tout moment depuis Mon compte.
-      </p>
+        <p className="text-footnote text-ink-muted">Modifiable à tout moment dans Compte.</p>
+      </section>
     </div>
   )
 }

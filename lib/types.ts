@@ -137,22 +137,5 @@ export interface ImportSummary {
   created_at: string
 }
 
-// Couleurs des pastilles de catégorie.
-//
-// Contrairement à l'icône — qui vient désormais de `categories.icon` en base — la
-// couleur reste codée ici : la colonne `categories.color` stocke un nom court
-// ("blue"), pas la paire de classes attendue, et Tailwind ne peut de toute façon pas
-// générer une classe construite dynamiquement au runtime. Rendre la couleur éditable
-// demanderait une palette fermée mappée ici, pas une simple lecture de la colonne.
-export const CATEGORY_COLORS: Record<string, string> = {
-  'sorties-enfants':  'bg-pink-100 text-pink-800',
-  'agenda':           'bg-purple-100 text-purple-800',
-  'sports':           'bg-orange-100 text-orange-800',
-  'travaux':          'bg-yellow-100 text-yellow-800',
-  'guinguettes':      'bg-teal-100 text-teal-800',
-  // Catégories de la migration 017. Sans entrée ici, la pastille tombe sur le gris de
-  // repli : la colonne `categories.color` n'est pas lue (voir le commentaire ci-dessus).
-  'infos-pratiques':      'bg-blue-100 text-blue-800',
-  'nature-environnement': 'bg-emerald-100 text-emerald-800',
-  'metropole':            'bg-sky-100 text-sky-800',
-}
+// Les couleurs de catégorie (tuile, libellé, icône) vivent dans lib/category-style.ts :
+// `CATEGORY_COLORS` et ses paires de classes pastel ont disparu avec la refonte « Givre ».

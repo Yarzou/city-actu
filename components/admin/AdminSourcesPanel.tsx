@@ -1,17 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Rss, Tags, ExternalLink } from 'lucide-react'
+import { Plus, Trash2, RefreshCw, CircleAlert, CircleCheck, CircleDashed, AlertTriangle, Settings, Pencil, Wand2, Sparkles, ChevronDown, ArrowUp, ArrowDown, Rss, Tags, ExternalLink, X, type LucideIcon } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { Source, SourceType, Category, City, ScrapingConfig, ImportSummary } from '@/lib/types'
 import { cn, formatDigestHtml } from '@/lib/utils'
+import { categoryStyle } from '@/lib/category-style'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Button, buttonClass } from '@/components/ui/Button'
+import { IconTile, ListRow, ListSection } from '@/components/ui/List'
+import { Notice } from '@/components/ui/Notice'
+import { Segmented } from '@/components/ui/Segmented'
+import { Switch } from '@/components/ui/Switch'
+
+// Teinte du badge de type. Elle n'est qu'un repère : c'est le libellé qui dit le type.
 const SOURCE_TYPE_BADGE: Record<SourceType, string> = {
-  rss:      'bg-blue-100 text-blue-700',
-  scraping: 'bg-orange-100 text-orange-700',
-  opendata: 'bg-teal-100 text-teal-700',
+  rss:      'bg-accent-soft text-accent',
+  scraping: 'bg-warn-soft text-warn',
+  opendata: 'bg-fill-soft text-ink-muted',
 }
 
 const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
@@ -19,6 +27,37 @@ const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
   scraping: 'SCRAPING',
   opendata: 'OPEN DATA',
 }
+
+const SUMMARY_FILTERS: { value: 'all' | 'on_demand' | 'refresh'; label: string }[] = [
+  { value: 'all', label: 'Tous' },
+  { value: 'on_demand', label: 'À la demande' },
+  { value: 'refresh', label: 'Refresh' },
+]
+
+/**
+ * Champs de saisie du panneau. 17 px (`text-body`) : en dessous de 16 px, Safari iOS
+ * zoome la page à la prise de focus. Deux surfaces : posé sur une carte, le champ est
+ * gris (`bg-fill-soft`) ; dans un encart déjà gris (édition en ligne, sélecteurs CSS),
+ * il redevient blanc (`bg-card`), sinon il se fondrait dans son fond.
+ */
+type Surface = 'card' | 'fill'
+
+function fieldClass(surface: Surface, className?: string) {
+  return cn(
+    'h-11 w-full rounded-xl border-0 px-3 text-body text-ink outline-none focus:ring-2 focus:ring-accent/40',
+    surface === 'card' ? 'bg-fill-soft' : 'bg-card',
+    className
+  )
+}
+
+const LABEL = 'mb-1.5 block text-footnote font-medium text-ink-muted'
+
+/** Petit titre en capitales d'un encart (formulaire, édition en ligne). */
+const PANEL_TITLE = 'text-footnote font-semibold uppercase tracking-[0.3px] text-ink-muted'
+
+/** Bouton rond d'action sur une ligne (ouvrir, tester, éditer…), teinté comme sur iOS. */
+const ICON_BUTTON = 'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-accent transition-colors hover:bg-fill-soft active:bg-fill-soft disabled:opacity-40 focus-ring'
+const ICON_BUTTON_DANGER = 'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-danger transition-colors hover:bg-danger-soft active:bg-danger-soft disabled:opacity-40 focus-ring'
 
 const EMPTY_SCRAPING_CONFIG: ScrapingConfig = {
   list_selector: '',
@@ -48,14 +87,17 @@ interface FetchResultDetail {
 /**
  * Santé du dernier fetch *persisté* (colonnes last_fetch_* de la source).
  * À ne pas confondre avec fetchResult, qui est le résultat éphémère du bouton "Tester le fetch".
+ *
+ * L'état ne repose jamais sur la seule couleur : une icône de forme différente et un
+ * mot (« Récupérée », « Échec ») le portent aussi.
  */
 function SourceHealthBadge({ source }: { source: Source }) {
   const { last_fetch_at, last_fetch_status, last_fetch_error, consecutive_failures } = source
 
   if (!last_fetch_at) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Cette source n'a jamais été récupérée">
-        <span className="size-1.5 rounded-full bg-gray-300" />
+      <span className="inline-flex items-center gap-1 text-footnote text-ink-muted" title="Cette source n'a jamais été récupérée">
+        <CircleDashed size={14} className="shrink-0 text-ink-faint" aria-hidden="true" />
         Jamais récupérée
       </span>
     )
@@ -66,18 +108,130 @@ function SourceHealthBadge({ source }: { source: Source }) {
 
   return (
     <span
-      className={cn('inline-flex items-center gap-1 text-xs', failed ? 'text-red-600' : 'text-green-600')}
+      className={cn('inline-flex flex-wrap items-center gap-x-1 text-footnote', failed ? 'text-danger' : 'text-ink-muted')}
       title={failed ? (last_fetch_error ?? 'Dernier fetch en échec') : `Dernier fetch réussi ${ago}`}
     >
-      <span className={cn('size-1.5 rounded-full', failed ? 'bg-red-500' : 'bg-green-500')} />
-      {ago}
+      {failed
+        ? <CircleAlert size={14} className="shrink-0" aria-hidden="true" />
+        : <CircleCheck size={14} className="shrink-0 text-accent" aria-hidden="true" />}
+      {failed ? `Échec ${ago}` : `Récupérée ${ago}`}
       {consecutive_failures >= 3 && (
-        <span className="inline-flex items-center gap-0.5 text-red-600 font-medium">
-          <AlertTriangle className="size-3" />
+        <span className="ml-1 inline-flex items-center gap-0.5 font-semibold text-danger">
+          <AlertTriangle className="size-3.5" aria-hidden="true" />
           {consecutive_failures} échecs
         </span>
       )}
     </span>
+  )
+}
+
+/** Résultat éphémère du « Tester le fetch » (ou du rafraîchissement global), sous la source. */
+function FetchResultLine({ result }: { result: FetchResultDetail }) {
+  if (result.errors.length > 0) {
+    return (
+      <ul className="mt-1.5 flex flex-col gap-0.5 text-footnote text-danger">
+        {result.errors.map((e, i) => (
+          <li key={i} className="flex items-start gap-1">
+            <CircleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 break-words">{e}</span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  return (
+    <p className="mt-1.5 flex items-center gap-1 text-footnote text-accent">
+      <CircleCheck size={14} className="shrink-0" aria-hidden="true" />
+      {result.fetched} récupérés, {result.inserted} ajoutés, {result.updated ?? 0} mis à jour
+    </p>
+  )
+}
+
+/**
+ * En-tête repliable d'une section du panneau, dessiné comme une ligne de Réglages :
+ * tuile d'icône, titre, compteur, chevron qui pivote. Le `<h2>` garde la structure
+ * annonçable par les lecteurs d'écran, sous le `<h1>` « Administration » de la page.
+ */
+function SectionToggle({
+  icon: Icon,
+  title,
+  count,
+  open,
+  onToggle,
+}: {
+  icon: LucideIcon
+  title: string
+  count: number
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <h2>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 rounded-[14px] bg-card px-4 text-left focus-ring active:bg-fill-soft"
+      >
+        <IconTile className="bg-accent-fill">
+          <Icon size={18} aria-hidden="true" />
+        </IconTile>
+        <span className="min-w-0 flex-1 text-body text-ink">{title}</span>
+        {count > 0 && <span className="text-body tabular-nums text-ink-muted">{count}</span>}
+        <ChevronDown
+          size={18}
+          strokeWidth={2.4}
+          className={cn('shrink-0 text-ink-faint transition-transform', open && 'rotate-180')}
+          aria-hidden="true"
+        />
+      </button>
+    </h2>
+  )
+}
+
+/** Icône de tête d'une ligne d'action (`ListRow`), à la largeur d'une tuile. */
+function RowIcon({ icon: Icon, tone = 'accent', className }: { icon: LucideIcon; tone?: 'accent' | 'danger'; className?: string }) {
+  return (
+    <span className={cn('flex w-[30px] justify-center', tone === 'danger' ? 'text-danger' : 'text-accent')}>
+      <Icon size={22} className={className} aria-hidden="true" />
+    </span>
+  )
+}
+
+/** Croix de fermeture d'un `Notice` : elle prend la teinte du message. */
+function DismissButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Fermer le message"
+      className="-my-2 -mr-2 inline-flex size-9 shrink-0 items-center justify-center rounded-full opacity-80 transition-opacity hover:opacity-100 focus-ring"
+    >
+      <X size={18} aria-hidden="true" />
+    </button>
+  )
+}
+
+/**
+ * Tuile de la catégorie telle que le public la verra (lib/category-style.ts). Un slug
+ * absent de la table y tombe sur l'ardoise de repli : c'est ici que l'admin le voit.
+ */
+function CategoryTile({ slug }: { slug: string }) {
+  const style = categoryStyle(slug)
+  return (
+    <IconTile color={style.color}>
+      <style.icon size={18} aria-hidden="true" />
+    </IconTile>
+  )
+}
+
+/** Champ libellé au-dessus de sa saisie. */
+function Field({ label, className, children }: { label: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <div className={className}>
+      <label className={LABEL}>{label}</label>
+      {children}
+    </div>
   )
 }
 
@@ -587,362 +741,313 @@ export function AdminSourcesPanel() {
     summarySourceFilter === 'all' ? true : summary.source === summarySourceFilter
   ))
 
-  if (loading) return <div className="py-8 text-gray-400 text-sm">Chargement…</div>
+  if (loading) return <p className="py-8 text-center text-subhead text-ink-muted">Chargement…</p>
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       {/* ── Gestion des sources ── */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-        <div className="flex items-center border-b border-gray-100">
-          <button
-            onClick={() => setSourcesOpen(o => !o)}
-            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
-          >
-            <span className="flex items-center gap-3">
-              <Rss size={17} className="text-brand-600 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-800">
-                Gestion des sources
-                {sources.length > 0 && (
-                  <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-                    {sources.length}
-                  </span>
-                )}
-              </span>
-            </span>
-            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', sourcesOpen && 'rotate-180')} />
-          </button>
-        </div>
+      <section className="flex flex-col gap-4">
+        <SectionToggle
+          icon={Rss}
+          title="Gestion des sources"
+          count={sources.length}
+          open={sourcesOpen}
+          onToggle={() => setSourcesOpen(o => !o)}
+        />
 
         {sourcesOpen && (
-        <div className="p-4">
-      {/* Actions */}
-      <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={deleteAllArticles}
-            disabled={deletingAll || deletingPast || refreshing}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
-            title="Supprimer tous les articles importés"
-          >
-            <Trash2 className={cn('size-4', deletingAll && 'animate-pulse')} />
-            <span className="hidden sm:inline">{deletingAll ? 'Suppression…' : 'Tout supprimer'}</span>
-          </button>
-          <button
-            onClick={deletePastArticlesBeforeWeekStart}
-            disabled={deletingPast || deletingAll || refreshing}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition-colors"
-            title="Supprimer les articles passés avant le lundi de la semaine en cours"
-          >
-            <Trash2 className={cn('size-4', deletingPast && 'animate-pulse')} />
-            <span className="hidden sm:inline">{deletingPast ? 'Suppression…' : 'Supprimer les actus passées'}</span>
-          </button>
-          <button
-            onClick={refreshAllSources}
-            disabled={refreshing || deletingAll || deletingPast}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            <span className="hidden sm:inline">{refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}</span>
-          </button>
-          {/* La génération vit dans l'onglet « Résumés IA » : le bouton qui était ici
-              faisait doublon. Ne reste que la purge de l'historique, qui n'a pas
-              d'équivalent ailleurs — l'onglet ne supprime qu'un résumé à la fois. */}
-          <button
-            onClick={deleteAllImportSummaries}
-            disabled={clearingSummaries || refreshing || importSummaries.length === 0}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-purple-200 text-sm font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors"
-            title="Supprimer tout l'historique des résumés IA"
-          >
-            <Trash2 className={cn('size-4', clearingSummaries && 'animate-pulse')} />
-            <span className="hidden sm:inline">
-              {clearingSummaries ? 'Suppression…' : 'Supprimer les résumés'}
-            </span>
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <Plus className="size-4" />
-            Ajouter
-          </button>
-        </div>
-      </div>
+        <div className="flex flex-col gap-4">
+      {/* Actions — des lignes libellées plutôt qu'une barre d'icônes : sur téléphone, les
+          libellés étaient masqués et trois corbeilles identiques ne se distinguaient que
+          par une infobulle, que le toucher n'affiche jamais. Le sous-titre la remplace. */}
+      <ListSection>
+        <ListRow
+          leading={<RowIcon icon={Plus} />}
+          title="Ajouter une source"
+          tone="accent"
+          onClick={() => setShowForm(!showForm)}
+        />
+        <ListRow
+          leading={<RowIcon icon={RefreshCw} className={cn(refreshing && 'animate-spin')} />}
+          title={refreshing ? 'Rafraîchissement…' : 'Rafraîchir les sources'}
+          tone="accent"
+          onClick={refreshAllSources}
+          disabled={refreshing || deletingAll || deletingPast}
+        />
+      </ListSection>
+
+      <ListSection header="Nettoyage">
+        <ListRow
+          leading={<RowIcon icon={Trash2} tone="danger" className={cn(deletingPast && 'animate-pulse')} />}
+          title={deletingPast ? 'Suppression…' : 'Supprimer les actus passées'}
+          subtitle="Avant le lundi de la semaine en cours"
+          tone="danger"
+          onClick={deletePastArticlesBeforeWeekStart}
+          disabled={deletingPast || deletingAll || refreshing}
+        />
+        <ListRow
+          leading={<RowIcon icon={Trash2} tone="danger" className={cn(deletingAll && 'animate-pulse')} />}
+          title={deletingAll ? 'Suppression…' : 'Tout supprimer'}
+          subtitle="Tous les articles importés"
+          tone="danger"
+          onClick={deleteAllArticles}
+          disabled={deletingAll || deletingPast || refreshing}
+        />
+        {/* La génération vit dans l'onglet « Résumés IA » : le bouton qui était ici
+            faisait doublon. Ne reste que la purge de l'historique, qui n'a pas
+            d'équivalent ailleurs — l'onglet ne supprime qu'un résumé à la fois. */}
+        <ListRow
+          leading={<RowIcon icon={Trash2} tone="danger" className={cn(clearingSummaries && 'animate-pulse')} />}
+          title={clearingSummaries ? 'Suppression…' : 'Supprimer les résumés'}
+          subtitle="Tout l'historique des résumés IA"
+          tone="danger"
+          onClick={deleteAllImportSummaries}
+          disabled={clearingSummaries || refreshing || importSummaries.length === 0}
+        />
+      </ListSection>
 
       {/* Refresh error */}
       {refreshError && (
-        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6 text-sm text-red-800">
-          <span>❌ {refreshError}</span>
-          <button onClick={() => setRefreshError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
-        </div>
+        <Notice tone="danger" action={<DismissButton onClick={() => setRefreshError(null)} />}>
+          {refreshError}
+        </Notice>
       )}
 
       {adminFeedback && (
-        <div className={cn(
-          'flex items-center justify-between rounded-xl px-4 py-3 mb-4 text-sm border',
-          adminFeedback.ok
-            ? 'bg-green-50 border-green-200 text-green-800'
-            : 'bg-red-50 border-red-200 text-red-800'
-        )}>
-          <span>{adminFeedback.ok ? '✅' : '❌'} {adminFeedback.msg}</span>
-          <button onClick={() => setAdminFeedback(null)} className={cn(
-            'ml-4',
-            adminFeedback.ok ? 'text-green-600 hover:text-green-800' : 'text-red-600 hover:text-red-800'
-          )}>✕</button>
-        </div>
+        <Notice
+          tone={adminFeedback.ok ? 'success' : 'danger'}
+          action={<DismissButton onClick={() => setAdminFeedback(null)} />}
+        >
+          {adminFeedback.msg}
+        </Notice>
       )}
 
-      {/* Refresh result banner */}
+      {/* Refresh result banner — en avertissement s'il y a eu des erreurs */}
       {refreshResult && (
-        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-sm text-green-800">
-          <span>
-            ✅ {refreshResult.sources} source(s) — {refreshResult.fetched} article(s) récupéré(s),{' '}
-            <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.updated ?? 0} mis à jour,{' '}
-            {refreshResult.unchanged ?? 0} inchangé(s)
-            {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
-          </span>
-          <button onClick={() => setRefreshResult(null)} className="ml-4 text-green-600 hover:text-green-800">✕</button>
-        </div>
+        <Notice
+          tone={refreshResult.errors > 0 ? 'warn' : 'success'}
+          action={<DismissButton onClick={() => setRefreshResult(null)} />}
+        >
+          {refreshResult.sources} source(s) — {refreshResult.fetched} article(s) récupéré(s),{' '}
+          <strong>{refreshResult.inserted} ajouté(s)</strong>, {refreshResult.updated ?? 0} mis à jour,{' '}
+          {refreshResult.unchanged ?? 0} inchangé(s)
+          {refreshResult.errors > 0 && `, ${refreshResult.errors} erreur(s)`}
+        </Notice>
       )}
 
       {/* Summarize error */}
       {summarizeError && (
-        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm text-red-800">
-          <span>❌ {summarizeError}</span>
-          <button onClick={() => setSummarizeError(null)} className="ml-4 text-red-600 hover:text-red-800">✕</button>
-        </div>
+        <Notice tone="danger" action={<DismissButton onClick={() => setSummarizeError(null)} />}>
+          {summarizeError}
+        </Notice>
       )}
 
       {/* Summary history */}
       {importSummaries.length > 0 && (
-        <div className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
+        <div className="overflow-hidden rounded-[14px] bg-card">
           <button
+            type="button"
             onClick={() => setShowSummaryHistory(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+            aria-expanded={showSummaryHistory}
+            className="flex min-h-[52px] w-full items-center gap-3 px-4 text-left focus-ring active:bg-fill-soft"
           >
-            <span className="flex items-center gap-2">
-              <Sparkles className="size-4 text-purple-500" />
-              Historique des résumés IA ({importSummaries.length})
-            </span>
-            {showSummaryHistory ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            <RowIcon icon={Sparkles} />
+            <span className="min-w-0 flex-1 text-body text-ink">Historique des résumés IA</span>
+            <span className="text-body tabular-nums text-ink-muted">{importSummaries.length}</span>
+            <ChevronDown
+              size={18}
+              strokeWidth={2.4}
+              className={cn('shrink-0 text-ink-faint transition-transform', showSummaryHistory && 'rotate-180')}
+              aria-hidden="true"
+            />
           </button>
           {showSummaryHistory && (
-            <div className="divide-y divide-gray-100">
-              <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-gray-500">Filtrer :</span>
-                <button
-                  onClick={() => setSummarySourceFilter('all')}
-                  className={cn(
-                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
-                    summarySourceFilter === 'all'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  Tous
-                </button>
-                <button
-                  onClick={() => setSummarySourceFilter('on_demand')}
-                  className={cn(
-                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
-                    summarySourceFilter === 'on_demand'
-                      ? 'bg-purple-600 text-white border-purple-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
-                  )}
-                >
-                  À la demande
-                </button>
-                <button
-                  onClick={() => setSummarySourceFilter('refresh')}
-                  className={cn(
-                    'text-xs px-2.5 py-1 rounded-full border transition-colors',
-                    summarySourceFilter === 'refresh'
-                      ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
-                  )}
-                >
-                  Refresh
-                </button>
-                <span className="text-xs text-gray-400">{filteredSummaries.length} résultat(s)</span>
+            <>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-separator px-4 py-3">
+                <Segmented
+                  label="Filtrer les résumés"
+                  value={summarySourceFilter}
+                  onChange={setSummarySourceFilter}
+                  options={SUMMARY_FILTERS}
+                  className="w-full sm:w-auto sm:min-w-80"
+                  itemClassName="h-8 text-footnote"
+                />
+                <span className="text-footnote text-ink-muted">{filteredSummaries.length} résultat(s)</span>
               </div>
               {filteredSummaries.map(s => (
-                <div key={s.id} className="px-4 py-3 bg-white">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                <article key={s.id} className="border-t border-separator px-4 py-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-footnote text-ink-muted">
                       <span>{new Date(s.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       <span className={cn(
-                        'px-1.5 py-0.5 rounded-full font-medium',
-                        s.source === 'refresh' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'
+                        'rounded-full px-2 py-0.5 text-caption font-semibold',
+                        s.source === 'refresh' ? 'bg-fill-soft text-ink-muted' : 'bg-accent-soft text-accent'
                       )}>
                         {s.source === 'refresh' ? 'Refresh' : 'À la demande'}
                       </span>
                       <span>{s.articles_count} article(s)</span>
                     </div>
                     <button
+                      type="button"
                       onClick={() => deleteImportSummary(s.id)}
                       disabled={deletingSummaryId === s.id}
                       title="Supprimer ce résumé"
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                      className={buttonClass('danger', 'md', 'shrink-0')}
                     >
-                      <Trash2 className={cn('size-3.5', deletingSummaryId === s.id && 'animate-pulse')} />
+                      <Trash2 size={16} className={cn(deletingSummaryId === s.id && 'animate-pulse')} aria-hidden="true" />
                       Supprimer
                     </button>
                   </div>
                   <div
-                    className="text-sm text-gray-700 leading-relaxed space-y-3 [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-gray-900 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1"
+                    className="space-y-3 text-subhead leading-relaxed text-ink [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-ink [&_li]:mb-1 [&_ul]:list-disc [&_ul]:pl-5"
                     dangerouslySetInnerHTML={{ __html: formatDigestHtml(s.summary_text) }}
                   />
-                </div>
+                </article>
               ))}
               {filteredSummaries.length === 0 && (
-                <div className="px-4 py-6 text-sm text-gray-500 bg-white">
+                <p className="border-t border-separator px-4 py-6 text-subhead text-ink-muted">
                   Aucun résumé IA pour ce filtre.
-                </div>
+                </p>
               )}
-            </div>
+            </>
           )}
         </div>
       )}
 
       {/* Add form */}
       {showForm && (
-        <form onSubmit={addSource} className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-gray-900">Nouvelle source</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ville</label>
+        <form onSubmit={addSource} className="flex flex-col gap-4 rounded-[14px] bg-card p-4 sm:p-5">
+          <h3 className="text-headline text-ink">Nouvelle source</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Ville">
               <select required value={form.city_id} onChange={e => setForm(f => ({ ...f, city_id: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                className={fieldClass('card')}>
                 <option value="">Choisir…</option>
                 {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+            </Field>
+            <Field label="Catégorie">
               <select required value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                className={fieldClass('card')}>
                 <option value="">Choisir…</option>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+            </Field>
+            <Field label="Nom">
               <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Mairie — Actualités" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                className={fieldClass('card')} placeholder="Mairie — Actualités" />
+            </Field>
+            <Field label="URL">
               <div className="flex gap-2">
                 <input required type="url" value={form.url} onChange={e => { setForm(f => ({ ...f, url: e.target.value })); setDetectPreview(null); setDetectError(null) }}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="https://…" />
+                  className={fieldClass('card', 'min-w-0 flex-1')} placeholder="https://…" />
                 {form.type === 'scraping' && (
                   <button
                     type="button"
                     onClick={() => detectScrapingConfig(form.url)}
                     disabled={detecting || !form.url}
                     title="Détecter automatiquement les sélecteurs CSS"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-300 bg-orange-50 text-orange-700 text-xs font-medium hover:bg-orange-100 disabled:opacity-40 transition-colors shrink-0"
+                    className={buttonClass('secondary', 'md', 'shrink-0')}
                   >
-                    <Wand2 className={cn('size-3.5', detecting && 'animate-pulse')} />
+                    <Wand2 size={16} className={cn(detecting && 'animate-pulse')} aria-hidden="true" />
                     {detecting ? 'Détection…' : 'Détecter'}
                   </button>
                 )}
               </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+            </Field>
+            <Field label="Type">
               <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as SourceType }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                className={fieldClass('card')}>
                 <option value="rss">RSS</option>
                 <option value="scraping">Scraping</option>
                 <option value="opendata">Open Data</option>
               </select>
               {form.type === 'opendata' && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Coller l&apos;URL complète d&apos;une API Opendatasoft (<code>…/records?where=…</code>) —
+                <p className="mt-1.5 text-footnote text-ink-muted">
+                  Coller l&apos;URL complète d&apos;une API Opendatasoft (<code className="font-mono">…/records?where=…</code>) —
                   le filtre ODSQL fait office de configuration, il n&apos;y a pas de sélecteurs à saisir.
                 </p>
               )}
-            </div>
-            <div className="flex items-center gap-2 pt-4">
-              <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
-              <label htmlFor="active" className="text-sm text-gray-700">Activer immédiatement</label>
-            </div>
+            </Field>
+            {/* Ligne de Réglages : libellé à gauche, interrupteur à droite. Le <label>
+                englobe le bouton de l'interrupteur, si bien qu'un appui sur le texte le
+                bascule, comme le faisait la case à cocher d'origine. `sm:mt-6` l'aligne
+                sur les champs voisins, qui portent un libellé au-dessus. Posée à même la
+                carte, sans fond gris : la piste éteinte (`bg-fill`) y disparaîtrait,
+                fill et fill-soft étant la même teinte en mode sombre. */}
+            <label className="flex min-h-11 items-center justify-between gap-3 self-start sm:mt-6">
+              <span className="text-body text-ink">Activer immédiatement</span>
+              <Switch
+                checked={form.active}
+                onChange={active => setForm(f => ({ ...f, active }))}
+                label="Activer immédiatement"
+              />
+            </label>
           </div>
 
           {form.type === 'scraping' && (
             <>
-              {detectError && (
-                <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  ❌ {detectError}
-                </div>
-              )}
+              {detectError && <Notice tone="danger">{detectError}</Notice>}
               {detectPreview && (
-                <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2 space-y-1">
-                  <p className="font-medium text-green-800">✅ {detectPreview.matchedCount} élément(s) détecté(s) — aperçu :</p>
-                  <ul className="list-disc list-inside text-green-700 space-y-0.5">
+                <Notice tone="success">
+                  <p className="font-medium">{detectPreview.matchedCount} élément(s) détecté(s) — aperçu :</p>
+                  <ul className="mt-1 list-inside list-disc space-y-0.5">
                     {detectPreview.sampleTitles.map((t, i) => <li key={i} className="truncate">{t}</li>)}
                   </ul>
-                </div>
+                </Notice>
               )}
               <ScrapingConfigFields config={scrapingConfig} onChange={setScrapingConfig} required />
             </>
           )}
 
-          <div className="flex gap-2 pt-2">
-            <button type="submit" className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700">
-              Enregistrer
-            </button>
-            <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border border-gray-200 text-sm rounded-lg hover:bg-gray-50">
-              Annuler
-            </button>
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" size="md">Enregistrer</Button>
+            <Button variant="plain" size="md" onClick={() => setShowForm(false)}>Annuler</Button>
           </div>
         </form>
       )}
 
-      {/* Sources — mobile cards */}
-      <div className="sm:hidden space-y-3 mb-4">
+      {/* Sources — une seule liste groupée, du téléphone au bureau. Elle remplace la
+          paire « cartes sous 640 px / tableau au-delà », qui dupliquait toute la ligne
+          et ses deux éditeurs en ligne. Chaque ligne porte les mêmes informations que
+          les anciennes colonnes : type, catégorie, santé, interrupteur d'activation. */}
+      <ListSection header="Sources">
         {sources.map((source) => {
           const result = fetchResult[source.id]
-          const hasErrors = result && result.errors.length > 0
+          const categoryName = (source.category as Category | undefined)?.name
           return (
-            <div key={source.id} className="bg-white rounded-2xl border border-gray-200 p-4 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-gray-900 text-sm">{source.name}</span>
+            <div key={source.id} className="border-t border-separator px-4 py-3 first:border-t-0">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-body font-semibold text-ink">{source.name}</p>
+                  <p className="truncate text-footnote text-ink-muted">{source.url}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className={cn('rounded-full px-2 py-0.5 text-caption font-semibold tracking-[0.3px]', SOURCE_TYPE_BADGE[source.type])}>
+                      {SOURCE_TYPE_LABEL[source.type]}
+                    </span>
+                    {categoryName && <span className="text-footnote text-ink-muted">{categoryName}</span>}
+                    <SourceHealthBadge source={source} />
                     {source.type === 'scraping' && !source.scraping_config && (
-                      <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
+                      // En toutes lettres : l'icône seule ne s'expliquait que par une
+                      // infobulle, absente au toucher.
+                      <span className="inline-flex items-center gap-1 text-footnote font-medium text-warn">
+                        <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                        Config scraping manquante
+                      </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 truncate mt-0.5">{source.url}</p>
+                  {result && <FetchResultLine result={result} />}
                 </div>
-                <button onClick={() => toggleActive(source)} title="Activer / désactiver" className="shrink-0 mt-0.5">
-                  {source.active
-                    ? <CheckCircle className="size-5 text-brand-500" />
-                    : <XCircle className="size-5 text-gray-300" />}
-                </button>
+                <div className="-mt-1.5 -mr-1 shrink-0">
+                  <Switch
+                    checked={source.active}
+                    onChange={() => toggleActive(source)}
+                    label={`Source « ${source.name} » active`}
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', SOURCE_TYPE_BADGE[source.type])}>
-                  {SOURCE_TYPE_LABEL[source.type]}
-                </span>
-                {(source.category as Category | undefined)?.name && (
-                  <span className="text-xs text-gray-500">{(source.category as Category | undefined)?.name}</span>
-                )}
-              </div>
-
-              <SourceHealthBadge source={source} />
-
-              {result && (
-                <div className={cn('text-xs', hasErrors ? 'text-red-600' : 'text-green-600')}>
-                  {hasErrors
-                    ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
-                    : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés, ${result.updated ?? 0} mis à jour`}
-                </div>
-              )}
-
-              <div className="flex items-center gap-1 pt-1 border-t border-gray-100">
+              <div className="-ml-2.5 mt-1 flex items-center gap-1">
                 {/*
                   Un <a> et non un <button> + window.open : le clic du milieu, « ouvrir
                   dans un nouvel onglet » et la copie du lien continuent de marcher, et
@@ -951,100 +1056,93 @@ export function AdminSourcesPanel() {
                   annoncer l'URL d'administration au site source.
                 */}
                 <a href={source.url} target="_blank" rel="noopener noreferrer"
-                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Ouvrir le lien dans un nouvel onglet">
-                  <ExternalLink className="size-4" />
+                  className={ICON_BUTTON} title="Ouvrir le lien dans un nouvel onglet">
+                  <ExternalLink size={18} aria-hidden="true" />
                 </a>
-                <button onClick={() => testFetch(source.id)} disabled={fetching === source.id}
-                  className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Tester le fetch">
-                  <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
+                <button type="button" onClick={() => testFetch(source.id)} disabled={fetching === source.id}
+                  className={ICON_BUTTON} title="Tester le fetch">
+                  <RefreshCw size={18} className={cn(fetching === source.id && 'animate-spin')} aria-hidden="true" />
                 </button>
-                <button onClick={() => openEditSource(source)}
-                  className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
-                    editingSource === source.id && 'text-brand-600 bg-brand-50')} title="Éditer nom / URL">
-                  <Pencil className="size-4" />
+                <button type="button" onClick={() => openEditSource(source)}
+                  aria-pressed={editingSource === source.id}
+                  className={cn(ICON_BUTTON, editingSource === source.id && 'bg-accent-soft')} title="Éditer nom / URL">
+                  <Pencil size={18} aria-hidden="true" />
                 </button>
                 {source.type === 'scraping' && (
-                  <button onClick={() => openEditConfig(source)}
-                    className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
-                      editingConfig === source.id && 'text-brand-600 bg-brand-50')} title="Éditer la config scraping">
-                    <Settings className="size-4" />
+                  <button type="button" onClick={() => openEditConfig(source)}
+                    aria-pressed={editingConfig === source.id}
+                    className={cn(ICON_BUTTON, editingConfig === source.id && 'bg-accent-soft')} title="Éditer la config scraping">
+                    <Settings size={18} aria-hidden="true" />
                   </button>
                 )}
-                <button onClick={() => deleteSource(source.id)}
-                  className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors" title="Supprimer">
-                  <Trash2 className="size-4" />
+                {/* Écartée des autres : une suppression ne doit pas tomber sous le pouce
+                    qui visait « Éditer ». */}
+                <button type="button" onClick={() => deleteSource(source.id)}
+                  className={cn(ICON_BUTTON_DANGER, 'ml-auto -mr-2.5')} title="Supprimer">
+                  <Trash2 size={18} aria-hidden="true" />
                 </button>
               </div>
 
               {editingSource === source.id && (
-                <div className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-3 mt-2">
-                  <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Éditer — {source.name}</p>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
+                <div className="mt-2 flex flex-col gap-3 rounded-xl bg-fill-soft p-3 sm:p-4">
+                  <p className={PANEL_TITLE}>Éditer — {source.name}</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Nom">
                       <input value={editSourceData.name} onChange={e => setEditSourceData(d => ({ ...d, name: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+                        className={fieldClass('fill')} />
+                    </Field>
+                    <Field label="URL">
                       <input type="url" value={editSourceData.url} onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+                        className={fieldClass('fill')} />
+                    </Field>
+                    <Field label="Catégorie">
                       <select value={editSourceData.category_id} onChange={e => setEditSourceData(d => ({ ...d, category_id: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                        className={fieldClass('fill')}>
                         <option value="">— Aucune —</option>
                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
-                    </div>
+                    </Field>
                   </div>
                   {source.type === 'scraping' && editSourceData.url !== source.url && (
-                    <p className="text-xs text-orange-700 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
-                      ⚠️ L&apos;URL a changé — la configuration scraping sera réinitialisée.
-                    </p>
+                    <Notice tone="warn">
+                      L&apos;URL a changé — la configuration scraping sera réinitialisée. Pensez à la reconfigurer via ⚙️.
+                    </Notice>
                   )}
                   <div className="flex gap-2">
-                    <button onClick={() => saveEditSource(source)} disabled={savingSource}
-                      className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                    <Button size="md" onClick={() => saveEditSource(source)} disabled={savingSource}>
                       {savingSource ? 'Enregistrement…' : 'Enregistrer'}
-                    </button>
-                    <button onClick={() => setEditingSource(null)}
-                      className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                    </Button>
+                    <Button variant="plain" size="md" onClick={() => setEditingSource(null)}>
                       Annuler
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
 
               {source.type === 'scraping' && editingConfig === source.id && (
-                <div className="border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-3 mt-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Config scraping — {source.name}</p>
+                <div className="mt-2 flex flex-col gap-3 rounded-xl bg-fill-soft p-3 sm:p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={PANEL_TITLE}>Config scraping — {source.name}</p>
                     <button
                       type="button"
                       onClick={() => detectEditConfig(source.url)}
                       disabled={detectingConfig}
                       title="Détecter automatiquement les sélecteurs CSS"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-orange-300 bg-white text-orange-700 text-xs font-medium hover:bg-orange-100 disabled:opacity-40 transition-colors"
+                      className={buttonClass('secondary', 'md', 'shrink-0')}
                     >
-                      <Wand2 className={cn('size-3.5', detectingConfig && 'animate-pulse')} />
+                      <Wand2 size={16} className={cn(detectingConfig && 'animate-pulse')} aria-hidden="true" />
                       {detectingConfig ? 'Détection…' : 'Détecter'}
                     </button>
                   </div>
-                  {detectConfigError && (
-                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">❌ {detectConfigError}</div>
-                  )}
-                  <ScrapingConfigFields config={editConfig} onChange={setEditConfig} required />
+                  {detectConfigError && <Notice tone="danger">{detectConfigError}</Notice>}
+                  <ScrapingConfigFields config={editConfig} onChange={setEditConfig} required nested />
                   <div className="flex gap-2">
-                    <button onClick={() => saveEditConfig(source.id)} disabled={savingConfig}
-                      className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                    <Button size="md" onClick={() => saveEditConfig(source.id)} disabled={savingConfig}>
                       {savingConfig ? 'Enregistrement…' : 'Enregistrer'}
-                    </button>
-                    <button onClick={() => setEditingConfig(null)}
-                      className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                    </Button>
+                    <Button variant="plain" size="md" onClick={() => setEditingConfig(null)}>
                       Annuler
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1052,338 +1150,136 @@ export function AdminSourcesPanel() {
           )
         })}
         {sources.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
+          <p className="px-4 py-12 text-center text-subhead text-ink-muted">Aucune source configurée</p>
         )}
-      </div>
-
-      {/* Sources table — desktop */}
-      <div className="hidden sm:block bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Nom</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Catégorie</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Type</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Statut</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sources.map((source) => {
-              const result = fetchResult[source.id]
-              const hasErrors = result && result.errors.length > 0
-              return (
-                <>
-                  <tr key={source.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-gray-900">{source.name}</span>
-                        {source.type === 'scraping' && !source.scraping_config && (
-                          <span title="Config scraping manquante">
-                            <AlertTriangle className="size-3.5 text-orange-400 shrink-0" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-400 truncate max-w-xs">{source.url}</div>
-                      {result && (
-                        <div className={cn('text-xs mt-1', hasErrors ? 'text-red-600' : 'text-green-600')}>
-                          {hasErrors
-                            ? result.errors.map((e, i) => <div key={i}>❌ {e}</div>)
-                            : `✅ ${result.fetched} récupérés, ${result.inserted} ajoutés, ${result.updated ?? 0} mis à jour`
-                          }
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 hidden sm:table-cell text-gray-600">
-                      {(source.category as Category | undefined)?.name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', SOURCE_TYPE_BADGE[source.type])}>
-                        {SOURCE_TYPE_LABEL[source.type]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1">
-                        <button onClick={() => toggleActive(source)} title="Activer / désactiver">
-                          {source.active
-                            ? <CheckCircle className="size-5 text-brand-500" />
-                            : <XCircle className="size-5 text-gray-300" />}
-                        </button>
-                        <SourceHealthBadge source={source} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        {/* Voir le commentaire de la carte mobile : un <a>, pas un bouton. */}
-                        <a href={source.url} target="_blank" rel="noopener noreferrer"
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Ouvrir le lien dans un nouvel onglet">
-                          <ExternalLink className="size-4" />
-                        </a>
-                        <button onClick={() => testFetch(source.id)} disabled={fetching === source.id}
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Tester le fetch">
-                          <RefreshCw className={cn('size-4', fetching === source.id && 'animate-spin')} />
-                        </button>
-                        <button onClick={() => openEditSource(source)}
-                          className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
-                            editingSource === source.id && 'text-brand-600 bg-brand-50')} title="Éditer nom / URL">
-                          <Pencil className="size-4" />
-                        </button>
-                        {source.type === 'scraping' && (
-                          <button onClick={() => openEditConfig(source)}
-                            className={cn('p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors',
-                              editingConfig === source.id && 'text-brand-600 bg-brand-50')} title="Éditer la config scraping">
-                            <Settings className="size-4" />
-                          </button>
-                        )}
-                        <button onClick={() => deleteSource(source.id)}
-                          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors" title="Supprimer">
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {editingSource === source.id && (
-                    <tr key={`${source.id}-edit`}>
-                      <td colSpan={5} className="px-4 pb-4 pt-0">
-                        <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
-                          <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Éditer — {source.name}</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
-                              <input value={editSourceData.name} onChange={e => setEditSourceData(d => ({ ...d, name: e.target.value }))}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
-                              <input type="url" value={editSourceData.url} onChange={e => setEditSourceData(d => ({ ...d, url: e.target.value }))}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
-                              <select value={editSourceData.category_id} onChange={e => setEditSourceData(d => ({ ...d, category_id: e.target.value }))}
-                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-                                <option value="">— Aucune —</option>
-                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                          {source.type === 'scraping' && editSourceData.url !== source.url && (
-                            <p className="text-xs text-orange-700 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
-                              ⚠️ L&apos;URL a changé — la configuration scraping sera réinitialisée. Pensez à la reconfigurer via ⚙️.
-                            </p>
-                          )}
-                          <div className="flex gap-2">
-                            <button onClick={() => saveEditSource(source)} disabled={savingSource}
-                              className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
-                              {savingSource ? 'Enregistrement…' : 'Enregistrer'}
-                            </button>
-                            <button onClick={() => setEditingSource(null)}
-                              className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
-                              Annuler
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {source.type === 'scraping' && editingConfig === source.id && (
-                    <tr key={`${source.id}-config`}>
-                      <td colSpan={5} className="px-4 pb-4 pt-0">
-                        <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Config scraping — {source.name}</p>
-                            <button
-                              type="button"
-                              onClick={() => detectEditConfig(source.url)}
-                              disabled={detectingConfig}
-                              title="Détecter automatiquement les sélecteurs CSS"
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-orange-300 bg-white text-orange-700 text-xs font-medium hover:bg-orange-100 disabled:opacity-40 transition-colors"
-                            >
-                              <Wand2 className={cn('size-3.5', detectingConfig && 'animate-pulse')} />
-                              {detectingConfig ? 'Détection…' : 'Détecter'}
-                            </button>
-                          </div>
-                          {detectConfigError && (
-                            <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">❌ {detectConfigError}</div>
-                          )}
-                          <ScrapingConfigFields config={editConfig} onChange={setEditConfig} required />
-                          <div className="flex gap-2">
-                            <button onClick={() => saveEditConfig(source.id)} disabled={savingConfig}
-                              className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
-                              {savingConfig ? 'Enregistrement…' : 'Enregistrer'}
-                            </button>
-                            <button onClick={() => setEditingConfig(null)}
-                              className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
-                              Annuler
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              )
-            })}
-          </tbody>
-        </table>
-        {sources.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">Aucune source configurée</div>
-        )}
-      </div>
+      </ListSection>
         </div>
         )}
-      </div>
+      </section>
 
       {/* ── Gestion des catégories ── */}
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-        <div className="flex items-center border-b border-gray-100">
-          <button
-            onClick={() => setCategoriesOpen(o => !o)}
-            className="flex-1 flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition-colors"
-          >
-            <span className="flex items-center gap-3">
-              <Tags size={17} className="text-brand-600 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-800">
-                Gestion des catégories
-                {categories.length > 0 && (
-                  <span className="ml-2 text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-                    {categories.length}
-                  </span>
-                )}
-              </span>
-            </span>
-            <ChevronDown size={16} className={cn('text-gray-400 transition-transform', categoriesOpen && 'rotate-180')} />
-          </button>
-        </div>
+      <section className="flex flex-col gap-4">
+        <SectionToggle
+          icon={Tags}
+          title="Gestion des catégories"
+          count={categories.length}
+          open={categoriesOpen}
+          onToggle={() => setCategoriesOpen(o => !o)}
+        />
 
         {categoriesOpen && (
-          <div className="p-4 space-y-3">
+          <ListSection footer="La tuile est celle que verra le public : teinte et icône viennent de lib/category-style.ts, indexé par slug. Une catégorie qui n'y figure pas prend l'ardoise par défaut.">
             {/* Existing categories */}
             {categories.map((cat, index) => (
-              <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-3">
-                {editingCategory === cat.id ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="col-span-2 sm:col-span-1">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Nom</label>
-                        <input value={editCategoryData.name}
-                          onChange={e => setEditCategoryData(d => ({ ...d, name: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                      </div>
-                      <div className="col-span-2 sm:col-span-1">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
-                        <input value={editCategoryData.slug}
-                          onChange={e => setEditCategoryData(d => ({ ...d, slug: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Icône</label>
-                        <input value={editCategoryData.icon}
-                          onChange={e => setEditCategoryData(d => ({ ...d, icon: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="🏛️" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Couleur</label>
-                        <input value={editCategoryData.color}
-                          onChange={e => setEditCategoryData(d => ({ ...d, color: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="blue" />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => saveCategory(cat.id)} disabled={savingCategory}
-                        className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50">
-                        {savingCategory ? 'Enregistrement…' : 'Enregistrer'}
-                      </button>
-                      <button onClick={() => setEditingCategory(null)}
-                        className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
-                        Annuler
-                      </button>
-                    </div>
+              editingCategory === cat.id ? (
+                <div key={cat.id} className="flex flex-col gap-3 border-t border-separator px-4 py-3 first:border-t-0">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Field label="Nom" className="col-span-2 sm:col-span-1">
+                      <input value={editCategoryData.name}
+                        onChange={e => setEditCategoryData(d => ({ ...d, name: e.target.value }))}
+                        className={fieldClass('card')} />
+                    </Field>
+                    <Field label="Slug" className="col-span-2 sm:col-span-1">
+                      <input value={editCategoryData.slug}
+                        onChange={e => setEditCategoryData(d => ({ ...d, slug: e.target.value }))}
+                        className={fieldClass('card', 'font-mono')} />
+                    </Field>
+                    <Field label="Icône">
+                      <input value={editCategoryData.icon}
+                        onChange={e => setEditCategoryData(d => ({ ...d, icon: e.target.value }))}
+                        className={fieldClass('card')} placeholder="🏛️" />
+                    </Field>
+                    <Field label="Couleur">
+                      <input value={editCategoryData.color}
+                        onChange={e => setEditCategoryData(d => ({ ...d, color: e.target.value }))}
+                        className={fieldClass('card')} placeholder="blue" />
+                    </Field>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-lg">{cat.icon}</span>
-                      <div className="min-w-0">
-                        <span className="font-medium text-sm text-gray-900">{cat.name}</span>
-                        <span className="ml-2 text-xs text-gray-400 font-mono">{cat.slug}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => moveCategory(cat.id, 'up')}
+                  <div className="flex gap-2">
+                    <Button size="md" onClick={() => saveCategory(cat.id)} disabled={savingCategory}>
+                      {savingCategory ? 'Enregistrement…' : 'Enregistrer'}
+                    </Button>
+                    <Button variant="plain" size="md" onClick={() => setEditingCategory(null)}>
+                      Annuler
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <ListRow
+                  key={cat.id}
+                  leading={<CategoryTile slug={cat.slug} />}
+                  title={cat.name}
+                  subtitle={<><span className="font-mono">{cat.slug}</span>{cat.icon && ` · ${cat.icon}`}</>}
+                  trailing={
+                    <div className="-mr-2 flex shrink-0 items-center">
+                      <button type="button" onClick={() => moveCategory(cat.id, 'up')}
                         disabled={index === 0 || reorderingCategory}
-                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors" title="Monter">
-                        <ArrowUp className="size-4" />
+                        className={ICON_BUTTON} title="Monter">
+                        <ArrowUp size={18} aria-hidden="true" />
                       </button>
-                      <button onClick={() => moveCategory(cat.id, 'down')}
+                      <button type="button" onClick={() => moveCategory(cat.id, 'down')}
                         disabled={index === categories.length - 1 || reorderingCategory}
-                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 transition-colors" title="Descendre">
-                        <ArrowDown className="size-4" />
+                        className={ICON_BUTTON} title="Descendre">
+                        <ArrowDown size={18} aria-hidden="true" />
                       </button>
-                      <button onClick={() => { setEditCategoryData({ name: cat.name, slug: cat.slug, icon: cat.icon ?? '', color: cat.color ?? '' }); setEditingCategory(cat.id) }}
-                        className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors" title="Éditer">
-                        <Pencil className="size-4" />
+                      <button type="button" onClick={() => { setEditCategoryData({ name: cat.name, slug: cat.slug, icon: cat.icon ?? '', color: cat.color ?? '' }); setEditingCategory(cat.id) }}
+                        className={ICON_BUTTON} title="Éditer">
+                        <Pencil size={18} aria-hidden="true" />
                       </button>
-                      <button onClick={() => deleteCategory(cat.id)}
-                        className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors" title="Supprimer">
-                        <Trash2 className="size-4" />
+                      <button type="button" onClick={() => deleteCategory(cat.id)}
+                        className={ICON_BUTTON_DANGER} title="Supprimer">
+                        <Trash2 size={18} aria-hidden="true" />
                       </button>
                     </div>
-                  </div>
-                )}
-              </div>
+                  }
+                />
+              )
             ))}
 
             {/* Add category form */}
             {showCategoryForm ? (
-              <form onSubmit={addCategory} className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-4 space-y-3">
-                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Nouvelle catégorie</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Nom <span className="text-red-500">*</span></label>
+              <form onSubmit={addCategory} className="flex flex-col gap-3 border-t border-separator px-4 py-4 first:border-t-0">
+                <p className={PANEL_TITLE}>Nouvelle catégorie</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Field label={<>Nom <span className="text-danger">*</span></>} className="col-span-2 sm:col-span-1">
                     <input required value={newCategory.name}
                       onChange={e => setNewCategory(d => ({ ...d, name: e.target.value, slug: toSlug(e.target.value) }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Vie locale" />
-                  </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
+                      className={fieldClass('card')} placeholder="Vie locale" />
+                  </Field>
+                  <Field label="Slug" className="col-span-2 sm:col-span-1">
                     <input value={newCategory.slug}
                       onChange={e => setNewCategory(d => ({ ...d, slug: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" placeholder="auto-généré" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Icône</label>
+                      className={fieldClass('card', 'font-mono')} placeholder="auto-généré" />
+                  </Field>
+                  <Field label="Icône">
                     <input value={newCategory.icon}
                       onChange={e => setNewCategory(d => ({ ...d, icon: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="🏛️" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Couleur</label>
+                      className={fieldClass('card')} placeholder="🏛️" />
+                  </Field>
+                  <Field label="Couleur">
                     <input value={newCategory.color}
                       onChange={e => setNewCategory(d => ({ ...d, color: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="blue" />
-                  </div>
+                      className={fieldClass('card')} placeholder="blue" />
+                  </Field>
                 </div>
                 <div className="flex gap-2">
-                  <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700">
-                    Créer
-                  </button>
-                  <button type="button" onClick={() => setShowCategoryForm(false)}
-                    className="px-3 py-1.5 border border-gray-200 text-xs rounded-lg hover:bg-gray-50">
+                  <Button type="submit" size="md">Créer</Button>
+                  <Button variant="plain" size="md" onClick={() => setShowCategoryForm(false)}>
                     Annuler
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : (
-              <button onClick={() => setShowCategoryForm(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors">
-                <Plus className="size-4" />
-                Ajouter une catégorie
-              </button>
+              <ListRow
+                leading={<RowIcon icon={Plus} />}
+                title="Ajouter une catégorie"
+                tone="accent"
+                onClick={() => setShowCategoryForm(true)}
+              />
             )}
-          </div>
+          </ListSection>
         )}
-      </div>
+      </section>
 
       <ConfirmDialog
         open={confirm.open}
@@ -1398,107 +1294,99 @@ export function AdminSourcesPanel() {
   )
 }
 
+/**
+ * Sélecteurs CSS d'une source scraping. Les saisies sont blanches sur fond gris : dans
+ * le formulaire d'ajout, le bloc porte son propre encart gris ; `nested` le retire quand
+ * il est déjà posé dans l'encart d'édition en ligne, qui a son propre titre.
+ */
 function ScrapingConfigFields({
   config,
   onChange,
   required,
+  nested,
 }: {
   config: ScrapingConfig
   onChange: (c: ScrapingConfig) => void
   required?: boolean
+  nested?: boolean
 }) {
+  const input = fieldClass('fill', 'font-mono')
+  const hint = 'font-normal'
+  const requiredMark = required && <span className="text-danger">*</span>
   return (
-    <div className="border border-orange-200 bg-orange-50 rounded-xl p-4 space-y-3">
-      <p className="text-xs font-semibold text-orange-800 uppercase tracking-wide">Configuration scraping (sélecteurs CSS)</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Sélecteur liste {required && <span className="text-red-500">*</span>}
-          </label>
+    <div className={cn('flex flex-col gap-3', !nested && 'rounded-xl bg-fill-soft p-4')}>
+      {!nested && <p className={PANEL_TITLE}>Configuration scraping (sélecteurs CSS)</p>}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label={<>Sélecteur liste {requiredMark}</>}>
           <input required={required} value={config.list_selector}
             onChange={e => onChange({ ...config, list_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="article, .news-item, li.event" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Sélecteur titre {required && <span className="text-red-500">*</span>}
-          </label>
+        </Field>
+        <Field label={<>Sélecteur titre {requiredMark}</>}>
           <input required={required} value={config.title_selector}
             onChange={e => onChange({ ...config, title_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="h2, h3, .title" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur lien</label>
+        </Field>
+        <Field label="Sélecteur lien">
           <input value={config.link_selector}
             onChange={e => onChange({ ...config, link_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="a" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur contenu</label>
+        </Field>
+        <Field label="Sélecteur contenu">
           <input value={config.content_selector ?? ''}
             onChange={e => onChange({ ...config, content_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="p, .summary" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur image</label>
+        </Field>
+        <Field label="Sélecteur image">
           <input value={config.image_selector ?? ''}
             onChange={e => onChange({ ...config, image_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="img" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date début</label>
+        </Field>
+        <Field label="Sélecteur date début">
           <input value={config.date_selector ?? ''}
             onChange={e => onChange({ ...config, date_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder='[itemprop="startDate"], time, .date' />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Sélecteur date fin <span className="text-gray-400 font-normal">(événements multi-jours)</span></label>
+        </Field>
+        <Field label={<>Sélecteur date fin <span className={hint}>(événements multi-jours)</span></>}>
           <input value={config.end_date_selector ?? ''}
             onChange={e => onChange({ ...config, end_date_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder='[itemprop="endDate"]' />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Sélecteur lieu <span className="text-gray-400 font-normal">(pour « ajouter au calendrier »)</span>
-          </label>
+        </Field>
+        <Field label={<>Sélecteur lieu <span className={hint}>(pour « ajouter au calendrier »)</span></>}>
           <input value={config.location_selector ?? ''}
             onChange={e => onChange({ ...config, location_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder='.lieu, [itemprop="location"]' />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Lieu fixe <span className="text-gray-400 font-normal">(si tous les événements ont lieu au même endroit)</span>
-          </label>
+        </Field>
+        <Field label={<>Lieu fixe <span className={hint}>(si tous les événements ont lieu au même endroit)</span></>}>
+          {/* Texte libre, pas un sélecteur : police courante */}
           <input value={config.location_default ?? ''}
             onChange={e => onChange({ ...config, location_default: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+            className={fieldClass('fill')}
             placeholder="Salle, Ville" />
-        </div>
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Sélecteur date sur page détail
-            <span className="text-gray-400 font-normal ml-1">(si les dates sont absentes de la liste — format &quot;Du X au Y mois&quot;)</span>
-          </label>
+        </Field>
+        <Field
+          className="sm:col-span-2"
+          label={<>Sélecteur date sur page détail <span className={hint}>(si les dates sont absentes de la liste — format &quot;Du X au Y mois&quot;)</span></>}
+        >
           <input value={config.detail_date_selector ?? ''}
             onChange={e => onChange({ ...config, detail_date_selector: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder='.date, .event-date' />
-        </div>
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-medium text-gray-600 mb-1">URL de base (si liens relatifs)</label>
+        </Field>
+        <Field label="URL de base (si liens relatifs)" className="sm:col-span-2">
           <input value={config.base_url ?? ''}
             onChange={e => onChange({ ...config, base_url: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono bg-white"
+            className={input}
             placeholder="https://exemple.fr" />
-        </div>
+        </Field>
       </div>
     </div>
   )

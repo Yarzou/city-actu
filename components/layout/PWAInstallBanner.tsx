@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { X, Download, Share } from 'lucide-react'
+import { buttonClass } from '@/components/ui/Button'
 
 const DISMISSED_KEY = 'pwa_install_dismissed_until'
 const DISMISS_DAYS = 7
@@ -98,10 +99,9 @@ export default function PWAInstallBanner() {
   if (!visible) return null
 
   return (
-    // `bottom-16` sur mobile : la barre de navigation basse occupe désormais le bas
-    // de l'écran, le bandeau se posait par-dessus.
-    <div className="fixed bottom-16 sm:bottom-0 left-0 right-0 z-40 flex justify-center px-4 pb-safe pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+    // Feuille de verre posée juste au-dessus de la barre d'onglets flottante.
+    <div className="bottom-toast pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4">
+      <div className="glass glass-strong pointer-events-auto w-full max-w-sm overflow-hidden rounded-[28px]">
         {/* Header */}
         <div className="flex items-center gap-3 px-4 pt-4 pb-3">
           <Image
@@ -113,32 +113,26 @@ export default function PWAInstallBanner() {
             className="rounded-xl shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">Ville Actu</p>
-            <p className="text-xs text-gray-500">Ajouter à l&apos;écran d&apos;accueil</p>
+            <p className="truncate text-headline text-ink">Ville Actu</p>
+            <p className="text-footnote text-ink-muted">Ajouter à l&apos;écran d&apos;accueil</p>
           </div>
           <button
             onClick={dismiss}
-            className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-fill text-ink-muted focus-ring"
             aria-label="Fermer"
           >
-            <X size={16} />
+            <X size={16} strokeWidth={2.6} />
           </button>
         </div>
 
         {/* Android: one-click install */}
         {platform === 'android' && (
-          <div className="px-4 pb-4 flex flex-col gap-2">
-            <button
-              onClick={handleInstall}
-              className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-sm font-semibold py-3 rounded-xl transition-colors"
-            >
-              <Download size={16} />
+          <div className="px-4 pb-4 flex flex-col gap-1">
+            <button onClick={handleInstall} className={buttonClass('primary', 'lg')}>
+              <Download size={18} />
               Installer l&apos;application
             </button>
-            <button
-              onClick={dismiss}
-              className="w-full text-center text-sm text-gray-400 hover:text-gray-600 py-1.5 transition-colors"
-            >
+            <button onClick={dismiss} className={buttonClass('plain', 'md', 'w-full')}>
               Non merci
             </button>
           </div>
@@ -146,21 +140,18 @@ export default function PWAInstallBanner() {
 
         {/* iOS: instructions */}
         {platform === 'ios' && (
-          <div className="px-4 pb-4 flex flex-col gap-2">
+          <div className="px-4 pb-4 flex flex-col gap-1">
             {!iosHint ? (
-              <button
-                onClick={() => setIosHint(true)}
-                className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-sm font-semibold py-3 rounded-xl transition-colors"
-              >
-                <Share size={16} />
+              <button onClick={() => setIosHint(true)} className={buttonClass('primary', 'lg')}>
+                <Share size={18} />
                 Voir comment installer
               </button>
             ) : (
-              <div className="bg-brand-50 rounded-xl p-3 text-sm text-brand-800 space-y-1.5">
+              <div className="space-y-1.5 rounded-2xl bg-accent-soft p-3 text-subhead text-ink">
                 <p className="font-semibold">Pour installer :</p>
                 <p>
                   1. Appuyez sur{' '}
-                  <span className="inline-flex items-center gap-0.5 font-medium">
+                  <span className="inline-flex items-center gap-0.5 font-medium text-accent">
                     <Share size={13} className="inline" /> Partager
                   </span>{' '}
                   {isSafari ? 'en bas de Safari' : 'dans la barre du navigateur'}
@@ -168,10 +159,7 @@ export default function PWAInstallBanner() {
                 <p>2. Puis <strong>« Sur l&apos;écran d&apos;accueil »</strong></p>
               </div>
             )}
-            <button
-              onClick={dismiss}
-              className="w-full text-center text-sm text-gray-400 hover:text-gray-600 py-1.5 transition-colors"
-            >
+            <button onClick={dismiss} className={buttonClass('plain', 'md', 'w-full')}>
               Non merci
             </button>
           </div>

@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminUser } from '@/lib/authz'
+import { BackLink, PageHeader } from '@/components/ui/PageHeader'
 
 /**
  * Page d'administration.
@@ -14,14 +15,17 @@ import { isAdminUser } from '@/lib/authz'
  *
  * Le garde est désormais **serveur** : un non-administrateur ne reçoit plus le
  * panneau du tout, alors que le garde client précédent se contentait de ne pas
- * l'afficher. La déconnexion a rejoint le menu de la barre de navigation, seul point
- * d'accès restant pour un visiteur ordinaire.
+ * l'afficher.
+ *
+ * Depuis la refonte « Givre », on y arrive par la section « Administration » de la
+ * page « Compte », et non plus par une entrée de la barre d'onglets : le retour du
+ * grand titre ramène donc à `/compte`.
  */
 
-// Chargé à la demande : c'est le plus gros composant du projet (~1 500 lignes).
+// Chargé à la demande : c'est le plus gros composant du projet (~1 400 lignes).
 const AdminSourcesPanel = dynamic(
   () => import('@/components/admin/AdminSourcesPanel').then((m) => m.AdminSourcesPanel),
-  { loading: () => <div className="h-64 animate-pulse rounded-2xl bg-gray-100" /> }
+  { loading: () => <div className="h-64 animate-pulse rounded-[14px] bg-fill-soft" /> }
 )
 
 export const metadata: Metadata = {
@@ -40,17 +44,16 @@ export default async function AdminPage() {
   if (!(await isAdminUser(supabase, user.id))) notFound()
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/*
-        Titre en `sr-only` : la page n'a qu'un seul contenu et le titre en gros
-        n'apportait rien à l'écran. Conservé pour les lecteurs d'écran plutôt que
-        supprimé — une page sans <h1> annonçable est une régression d'accessibilité.
-        Même pratique que le titre de ville sur mobile.
-      */}
-      <div className="mb-4">
-        <h1 className="sr-only">Administration</h1>
-        <p className="text-sm text-gray-500">{user.email}</p>
-      </div>
+    // Pas de `pb` : le layout réserve déjà la place de la barre d'onglets flottante.
+    // `pt-safe` remplace l'ancienne barre haute, il ne reste que la barre d'état.
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 pt-safe sm:px-6">
+      {/* Le titre redevient visible : sans barre haute, chaque écran porte son propre
+          grand titre — c'est lui le <h1> annonçable, qui était jusqu'ici en sr-only. */}
+      <PageHeader
+        leading={<BackLink href="/compte" label="Retour au compte" />}
+        title="Administration"
+        subtitle={user.email}
+      />
       <AdminSourcesPanel />
     </div>
   )

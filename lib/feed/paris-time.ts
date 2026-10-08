@@ -150,6 +150,37 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
  * donneraient pas la même heure et l'affichage sauterait à l'hydratation — le même
  * piège que les bornes de journée de ce module.
  */
+const TODAY_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: PARIS_TZ, weekday: 'long', day: 'numeric', month: 'long',
+})
+
+/**
+ * « jeudi 8 octobre » : la date du jour à Paris, sur-titre des écrans de la ville.
+ * Calculée par le serveur et passée en prop, pour que l'hydratation ne la recalcule pas
+ * dans le fuseau du navigateur.
+ */
+export function formatParisTodayLabel(at: Date = new Date()): string {
+  return TODAY_FORMATTER.format(at)
+}
+
+/**
+ * « 6 h 02 » si l'instant est aujourd'hui à Paris, « hier à 6 h 02 », sinon la date
+ * courte : la fraîcheur de la collecte, en tête du compteur du fil.
+ */
+export function formatParisFreshness(iso: string, now: Date = new Date()): string | null {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const parts = new Map(DATE_TIME_FORMATTER.formatToParts(at).map((p) => [p.type, p.value]))
+  const hour = parts.get('hour')?.replace(/^0/, '')
+  const minute = parts.get('minute')
+  const time = hour && minute ? `${hour} h ${minute}` : ''
+  const day = civilDateToISO(parisCivilDate(at))
+  const today = parisCivilDate(now)
+  if (day === civilDateToISO(today)) return `à ${time}`
+  if (day === civilDateToISO(addCivilDays(today, -1))) return `hier à ${time}`
+  return `le ${parts.get('day')}/${parts.get('month')} à ${time}`
+}
+
 export function formatParisDateTime(iso: string): string | null {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null

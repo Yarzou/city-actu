@@ -2,15 +2,23 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CalendarDays, ChevronDown, List as ListIcon, Search, TriangleAlert, X } from 'lucide-react'
+import { ChevronDown, Newspaper, Search, TriangleAlert, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { DateFilter } from './DateFilter'
 import { MonthNav, MonthView } from './MonthView'
+import { DayHeader } from './DayHeader'
+import { FEED_LIST_CLASSES } from './FeedSkeleton'
+import { Segmented } from '@/components/ui/Segmented'
+import { Notice } from '@/components/ui/Notice'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { chipClass } from '@/components/ui/Chip'
+import { buttonClass } from '@/components/ui/Button'
+import { categoryStyle } from '@/lib/category-style'
 import { queryArticles, queryMonthEvents, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
 import { fetchLastFetchAt } from '@/lib/feed/last-update'
-import { parisHorizonISO, formatParisDateTime, parisCivilDate } from '@/lib/feed/paris-time'
+import { parisHorizonISO, formatParisFreshness, parisCivilDate } from '@/lib/feed/paris-time'
 import { parisDateISO } from '@/lib/fetchers/dates'
 import {
   deserializeRangeBounds,
@@ -38,7 +46,7 @@ import {
   toggleCategory,
 } from '@/lib/feed/category-params'
 import type { FeedArticle, Category as CategoryType } from '@/lib/types'
-import { cn, groupByDay, formatDayHeader, normalizeSearchText } from '@/lib/utils'
+import { cn, groupByDay, formatDayHeader, normalizeSearchText, UNDATED_DAY_KEY } from '@/lib/utils'
 
 const PAGE_SIZE = 20
 const SEARCH_DEBOUNCE_MS = 250
@@ -126,8 +134,9 @@ function clearExternalScrollSnapshot() {
   window.sessionStorage.removeItem(EXTERNAL_LINK_SCROLL_KEY)
 }
 
-const LIST_CLASSES =
-  'flex flex-col gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:gap-4'
+// Partagées avec le squelette (`FeedSkeleton`) : la liste et sa silhouette doivent
+// avoir la même grille, sinon les cartes sautent au remplacement.
+const LIST_CLASSES = FEED_LIST_CLASSES
 
 interface ArticleFeedProps {
   citySlug: string
@@ -286,10 +295,10 @@ export function ArticleFeed({
     [citySlug, categorySlug, selectedCategories, dateRange, searchQuery, view, month]
   )
 
-  // Formaté en Europe/Paris (voir formatParisDateTime) : la chaîne est produite côté
-  // serveur puis réutilisée telle quelle, elle ne doit pas dépendre du fuseau du client.
+  // Formaté en Europe/Paris (voir formatParisFreshness) : « à 6 h 02 », « hier à 6 h 02 ».
+  // La chaîne ne doit pas dépendre du fuseau du client.
   const lastFetchLabel = useMemo(
-    () => (lastFetch ? formatParisDateTime(lastFetch) : null),
+    () => (lastFetch ? formatParisFreshness(lastFetch) : null),
     [lastFetch]
   )
 
@@ -901,19 +910,25 @@ export function ArticleFeed({
     return parts.join(' ')
   }, [view, grid, monthData, month, total, dateRange, searchQuery, searchInput])
 
-  const VIEW_BUTTON =
-    'inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors focus-ring'
-  const VIEW_ACTIVE = 'bg-brand-600 text-white'
-  const VIEW_IDLE = 'text-gray-700 hover:bg-gray-100'
+  // Compteur et fraîcheur sur une seule ligne discrète : « 18 actus · mis à jour à
+  // 6 h 02 ». La fraîcheur est une propriété de la ville (la source la plus récemment
+  // collectée), elle reste affichée même quand le compteur attend sa requête.
+  const showCount = Boolean(countLabel) && (view === 'mois' ? !monthLoading : !loading && !error && articles.length > 0)
+  const statusLine = useMemo(() => {
+    const parts = [showCount ? countLabel : null, lastFetchLabel ? `mis à jour ${lastFetchLabel}` : null].filter(Boolean) as string[]
+    if (parts.length === 0) return null
+    const line = parts.join(' · ')
+    return line.charAt(0).toUpperCase() + line.slice(1)
+  }, [showCount, countLabel, lastFetchLabel])
 
-  function renderCard(article: FeedArticle, absoluteIndex: number) {
+  function renderCard(article: FeedArticle, absoluteIndex: number, variant: 'compact' | 'hero' = 'compact') {
     return (
       <ArticleCard
         key={article.id}
         article={article}
+        variant={variant}
         // Une seule carte est au-dessus de la ligne de flottaison sur mobile (une
-        // colonne) : sortir les quatre premières du lazy-loading, comme avant, faisait
-        // concurrence au LCP au lieu de le servir.
+        // colonne) : sortir les suivantes du lazy-loading ferait concurrence au LCP.
         priority={absoluteIndex === 0}
         userId={userId}
         isFavorited={favorites.has(article.id)}
@@ -930,13 +945,13 @@ export function ArticleFeed({
   }
 
   const paginationFooter = hasMore ? (
-    <div ref={sentinelRef} className="mt-8 text-center">
+    <div ref={sentinelRef} className="mt-6 flex justify-center">
       {(autoLoadExhausted || loadingMore) && (
         <button
           type="button"
           onClick={() => { setAutoLoads(0); void loadMore() }}
           disabled={loadingMore}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 focus-ring sm:w-auto"
+          className={buttonClass('tinted', 'md', 'w-full sm:w-auto sm:px-6')}
         >
           {loadingMore ? 'Chargement…' : 'Voir plus'}
           {!loadingMore && <ChevronDown className="size-4" />}
@@ -945,257 +960,225 @@ export function ArticleFeed({
     </div>
   ) : null
 
+  const retryLink = (
+    <button type="button" onClick={retry} className="font-semibold underline focus-ring">
+      Réessayer
+    </button>
+  )
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+    <div className="flex flex-col gap-3">
+      {/* Recherche : capsule iOS. `text-body` (17 px) : sous 16 px, Safari iOS zoome
+          automatiquement à la prise de focus. */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder={hideCategoryTabs ? 'Une commune, un lieu, un événement…' : 'Rechercher un événement, un lieu…'}
+          className="h-10 w-full rounded-full bg-fill pl-10 pr-11 text-body text-ink outline-none transition-shadow focus:ring-2 focus:ring-accent/40"
+          aria-label="Rechercher des articles"
+        />
+        {searchInput && (
+          <button
+            type="button"
+            onClick={() => setSearchInput('')}
+            className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-ink-muted focus-ring"
+            aria-label="Effacer la recherche"
+          >
+            <X className="size-[18px]" />
+          </button>
+        )}
+      </div>
+
       {/*
-        Retour des actions de carte (masquage, favori, partage). Plus d'en-tête ici :
-        le titre de la ville est porté par `CityHomePage`, le `<h1>` de ce composant
-        ne se rendait jamais (ses deux appelants le masquaient).
+        Menu « Quand » à gauche, « Liste | Mois » à droite. En mode mois, la navigation
+        de mois prend la place du menu : une plage de dates n'a pas de sens sur un mois
+        qui en est déjà une.
       */}
-      {refreshFeedback && (
-        <p role="status" className={cn('mb-4 text-sm', refreshFeedback.ok ? 'text-brand-700' : 'text-red-600')}>
-          {refreshFeedback.msg}
-        </p>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          {view === 'liste' ? (
+            <DateFilter value={dateRange} onChange={applyDateRange} />
+          ) : (
+            <MonthNav month={month} currentMonth={currentMonth} onMonthChange={changeMonth} />
+          )}
+        </div>
+        <Segmented
+          label="Mode d'affichage"
+          value={view}
+          onChange={switchView}
+          options={[
+            { value: 'liste', label: 'Liste' },
+            { value: 'mois', label: 'Mois' },
+          ]}
+          className="w-[136px] shrink-0"
+        />
+      </div>
+
+      {/*
+        Filtre de catégories : cumulatif, et de simples boutons — pas des liens : un
+        segment d'URL ne portait qu'une catégorie et chaque appui déclenchait une
+        navigation complète. `aria-pressed` : ce sont des interrupteurs.
+
+        La tuile colorée de chaque pastille reprend celle des cartes : la couleur d'une
+        catégorie se lit pareil partout.
+      */}
+      {!hideCategoryTabs && (
+        <div
+          role="group"
+          aria-label="Filtrer par catégorie"
+          className="edge-fade scrollbar-hide -mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:px-0"
+        >
+          <button
+            type="button"
+            onClick={clearCategoryFilter}
+            aria-pressed={selectedCategories.length === 0}
+            className={chipClass(selectedCategories.length === 0)}
+          >
+            Tout
+          </button>
+          {categories.filter((cat) => cat.slug !== excludeCategorySlug).map((cat) => {
+            const active = selectedCategorySet.has(cat.slug)
+            const style = categoryStyle(cat.slug)
+            const Icon = style.icon
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => toggleCategoryFilter(cat.slug)}
+                aria-pressed={active}
+                className={chipClass(active, 'pl-1.5')}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-flex size-6 items-center justify-center rounded-full text-white"
+                  style={{ backgroundColor: active ? 'rgba(255, 255, 255, 0.22)' : style.color }}
+                >
+                  <Icon className="size-3.5" strokeWidth={2.4} />
+                </span>
+                {cat.name}
+              </button>
+            )
+          })}
+        </div>
       )}
 
-      {/* Plus de mini-calendrier latéral : la pastille « Date… » sert tous les écrans. */}
-      <div>
-        <div>
-          <div className="mb-4">
-            {lastFetchLabel && (
-              <p className="mb-2 text-xs text-gray-500">Mis à jour le {lastFetchLabel}</p>
-            )}
-            <div className="relative mb-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
-              <input
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Rechercher dans le titre ou le contenu…"
-                // `text-base` (16px) et non `text-sm` : sous 16px, Safari iOS zoome
-                // automatiquement à la prise de focus et l'utilisateur doit
-                // repincer pour revoir la page.
-                className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-9 pr-12 text-base text-gray-800 placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
-                aria-label="Rechercher des articles"
-              />
-              {searchInput && (
-                <button
-                  type="button"
-                  onClick={() => setSearchInput('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-ring"
-                  aria-label="Effacer la recherche"
-                >
-                  <X className="size-4" />
-                </button>
-              )}
+      {/* Bandeau d'erreur quand la liste courante reste affichable (échec de
+          pagination, par exemple) : on ne jette pas ce qui est déjà lu. */}
+      {view === 'liste' && error && articles.length > 0 && (
+        <Notice tone="danger" action={retryLink}>
+          Le chargement a échoué. Certaines actus peuvent manquer.
+        </Notice>
+      )}
+
+      {/* Compteur : dit ce que les filtres ont retenu, ce que rien n'indiquait. */}
+      {statusLine && <p className="text-footnote text-ink-muted" aria-live="polite">{statusLine}</p>}
+
+      <div className="mt-1">
+        {/* Vue mensuelle */}
+        {view === 'mois' && (
+          <MonthView
+            month={month}
+            todayKey={todayKey}
+            grid={grid}
+            sections={sections}
+            loading={monthLoading}
+            error={monthError}
+            onRetry={() => void loadMonth(month, searchQuery, selectedCategories)}
+            renderCard={renderCard}
+            listClassName={LIST_CLASSES}
+          />
+        )}
+
+        {/* Feed */}
+        {view === 'liste' && <div role="status" aria-live="polite" aria-busy={loading || refetching}>
+          {loading ? (
+            <div className={LIST_CLASSES} aria-hidden="true">
+              {/* Six et non douze : sur mobile une colonne, douze cartes fantômes
+                  c'était trois écrans de peinture inutile. */}
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
-            {/*
-              Pastilles de date à gauche, sélecteur « Liste | Mois » à droite. En mode
-              mois, la navigation de mois prend la place des pastilles : une plage de
-              dates n'a pas de sens sur un mois qui en est déjà une, et laisser la case
-              vide isolait le sélecteur à droite sur mobile.
-            */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                {view === 'liste' ? (
-                  <DateFilter value={dateRange} onChange={applyDateRange} />
-                ) : (
-                  <MonthNav month={month} currentMonth={currentMonth} onMonthChange={changeMonth} />
-                )}
-              </div>
-              <div
-                role="group"
-                aria-label="Mode d'affichage"
-                className="inline-flex shrink-0 rounded-full border border-gray-200 bg-white p-0.5"
-              >
-                <button
-                  type="button"
-                  onClick={() => switchView('liste')}
-                  aria-pressed={view === 'liste'}
-                  className={cn(VIEW_BUTTON, view === 'liste' ? VIEW_ACTIVE : VIEW_IDLE)}
-                >
-                  <ListIcon className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">Liste</span>
-                  <span className="sr-only sm:hidden">Liste</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchView('mois')}
-                  aria-pressed={view === 'mois'}
-                  className={cn(VIEW_BUTTON, view === 'mois' ? VIEW_ACTIVE : VIEW_IDLE)}
-                >
-                  <CalendarDays className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">Mois</span>
-                  <span className="sr-only sm:hidden">Mois</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/*
-            Filtre de catégories : cumulatif, et surtout de simples boutons.
-
-            C'étaient des `<Link>` vers `/[citySlug]/[categorySlug]` : chaque appui
-            déclenchait une navigation de segment, donc `loading.tsx`, donc une grille
-            de squelettes et une attente serveur complète — d'où l'impression de bug
-            sur un réseau mobile. Et un segment ne portant qu'une catégorie, le cumul
-            était impossible par construction.
-
-            `aria-pressed` et non `aria-current="page"` : ce ne sont plus des liens
-            mais des interrupteurs.
-          */}
-          {!hideCategoryTabs && (
-            <div
-              role="group"
-              aria-label="Filtrer par catégorie"
-              className="edge-fade flex flex-nowrap snap-x snap-mandatory overflow-x-auto scrollbar-hide gap-2 mb-6 sm:flex-wrap sm:snap-none"
+          ) : error ? (
+            <EmptyState
+              icon={TriangleAlert}
+              tone="danger"
+              title="Impossible de charger les actualités"
+              action={<button type="button" onClick={retry} className={buttonClass('secondary', 'md')}>Réessayer</button>}
             >
-              <button
-                type="button"
-                onClick={clearCategoryFilter}
-                aria-pressed={selectedCategories.length === 0}
-                className={cn(
-                  'shrink-0 snap-start min-h-11 inline-flex items-center px-4 py-2 rounded-full text-sm border transition-colors focus-ring',
-                  selectedCategories.length === 0
-                    ? 'bg-brand-600 text-white border-brand-600'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-                )}
-              >
-                Tout
-              </button>
-              {categories.filter((cat) => cat.slug !== excludeCategorySlug).map((cat) => {
-                const active = selectedCategorySet.has(cat.slug)
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => toggleCategoryFilter(cat.slug)}
-                    aria-pressed={active}
-                    className={cn(
-                      'shrink-0 snap-start min-h-11 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm border transition-colors focus-ring',
-                      active
-                        ? 'bg-brand-600 text-white border-brand-600'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-brand-400 hover:bg-brand-50'
-                    )}
-                  >
-                    <span aria-hidden="true">{cat.icon || '📰'}</span>
-                    {cat.name}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Bandeau d'erreur quand la liste courante reste affichable (échec de
-              pagination, par exemple) : on ne jette pas ce qui est déjà lu. */}
-          {view === 'liste' && error && articles.length > 0 && (
-            <div
-              role="alert"
-              className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-              <p className="flex-1">Le chargement a échoué. Certaines actus peuvent manquer.</p>
-              <button type="button" onClick={retry} className="font-medium underline focus-ring">
-                Réessayer
-              </button>
-            </div>
-          )}
-
-          {/* Compteur : dit ce que les filtres ont retenu, ce que rien n'indiquait. */}
-          {countLabel && (view === 'mois' ? !monthLoading : !loading && !error && articles.length > 0) && (
-            <p className="mb-3 text-xs text-gray-500" aria-live="polite">{countLabel}</p>
-          )}
-
-          {/* Vue mensuelle */}
-          {view === 'mois' && (
-            <MonthView
-              month={month}
-              todayKey={todayKey}
-              grid={grid}
-              sections={sections}
-              loading={monthLoading}
-              error={monthError}
-              onRetry={() => void loadMonth(month, searchQuery, selectedCategories)}
-              renderCard={renderCard}
-              listClassName={LIST_CLASSES}
-            />
-          )}
-
-          {/* Feed */}
-          {view === 'liste' && <div role="status" aria-live="polite" aria-busy={loading || refetching}>
-            {loading ? (
-              <div className={LIST_CLASSES} aria-hidden="true">
-                {/* Six et non douze : sur mobile une colonne, douze cartes fantômes
-                    c'était trois écrans de peinture inutile. */}
-                {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
-            ) : error ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-12 text-center">
-                <TriangleAlert className="mx-auto mb-3 size-8 text-red-500" />
-                <p className="font-medium text-red-800">Impossible de charger les actualités</p>
-                <p className="mt-1 text-sm text-red-600">
-                  Vérifiez votre connexion, puis réessayez.
-                </p>
-                <button
-                  type="button"
-                  onClick={retry}
-                  className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-red-300 bg-white px-5 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 focus-ring"
-                >
-                  Réessayer
-                </button>
-              </div>
-            ) : articles.length === 0 ? (
-              <div className="text-center py-20">
-                <p className="text-4xl mb-4" aria-hidden="true">📰</p>
-                <p className="font-medium text-gray-600">
-                  {/* L'ancien message parlait de « catégorie » quelle que soit la
-                      cause : une pastille de date ou une recherche pouvait vider le
-                      feed sans que rien ne le dise. */}
-                  {searchQuery
-                    ? 'Aucun article ne correspond à cette recherche'
-                    : dateRange
-                      ? `Aucun article pour ${dateRange.label}`
-                      : selectedCategories.length > 0
-                        ? selectedCategories.length === 1
-                          ? 'Aucun article dans cette catégorie'
-                          : 'Aucun article dans ces catégories'
-                        : 'Aucun article pour le moment'}
-                </p>
-                {hasActiveFilters && (
-                  <button
-                    type="button"
-                    onClick={resetFilters}
-                    className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-gray-200 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus-ring"
-                  >
+              Vérifiez votre connexion, puis réessayez.
+            </EmptyState>
+          ) : articles.length === 0 ? (
+            <EmptyState
+              icon={Newspaper}
+              // L'ancien message parlait de « catégorie » quelle que soit la cause : une
+              // date ou une recherche pouvait vider le feed sans que rien ne le dise.
+              title={
+                searchQuery
+                  ? 'Aucun article ne correspond à cette recherche'
+                  : dateRange
+                    ? `Aucun article pour ${dateRange.label}`
+                    : selectedCategories.length > 0
+                      ? selectedCategories.length === 1
+                        ? 'Aucun article dans cette catégorie'
+                        : 'Aucun article dans ces catégories'
+                      : 'Aucun article pour le moment'
+              }
+              action={
+                hasActiveFilters ? (
+                  <button type="button" onClick={resetFilters} className={buttonClass('secondary', 'md')}>
                     Réinitialiser les filtres
                   </button>
-                )}
-              </div>
-            ) : (
-              <div className={cn('transition-opacity', refetching && 'opacity-60 pointer-events-none')}>
-                {(() => {
-                  let cursor = 0
-                  return [...grouped.entries()].map(([dayKey, dayArticles]) => {
-                    const startIndex = cursor
-                    cursor += dayArticles.length
-                    return (
-                      <section key={dayKey} className="mb-8" aria-label={formatDayHeader(dayKey)}>
-                        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                          {formatDayHeader(dayKey)}
-                        </h2>
-                        <div className={LIST_CLASSES}>
-                          {dayArticles.map((article, i) => renderCard(article, startIndex + i))}
-                        </div>
-                      </section>
-                    )
-                  })
-                })()}
-                {paginationFooter}
-              </div>
-            )}
-          </div>}
-        </div>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className={cn('transition-opacity', refetching && 'opacity-60 pointer-events-none')}>
+              {(() => {
+                let cursor = 0
+                return [...grouped.entries()].map(([dayKey, dayArticles]) => {
+                  const startIndex = cursor
+                  cursor += dayArticles.length
+                  // La première carte illustrée d'une journée passe en grande carte : elle
+                  // donne le rythme du fil, à la manière d'Apple News. Pas pour « Sans
+                  // date », qui n'est pas une journée.
+                  const heroIndex = dayKey === UNDATED_DAY_KEY ? -1 : dayArticles.findIndex((a) => a.image_url)
+                  return (
+                    <section key={dayKey} className="mb-7" aria-label={formatDayHeader(dayKey)}>
+                      <DayHeader dayKey={dayKey} />
+                      <div className={LIST_CLASSES}>
+                        {dayArticles.map((article, i) =>
+                          renderCard(article, startIndex + i, i === heroIndex ? 'hero' : 'compact')
+                        )}
+                      </div>
+                    </section>
+                  )
+                })
+              })()}
+              {paginationFooter}
+            </div>
+          )}
+        </div>}
       </div>
+
+      {/*
+        Retour des actions de carte (masquage, favori, partage) : une pastille de verre
+        au-dessus de la barre d'onglets, à la manière d'un toast iOS. Le bandeau en tête
+        de liste qu'elle remplace était invisible dès qu'on avait défilé.
+      */}
+      {refreshFeedback && (
+        <div role="status" className="bottom-toast pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4">
+          <p
+            className={cn(
+              'glass glass-strong rounded-full px-4 py-2.5 text-subhead font-medium',
+              refreshFeedback.ok ? 'text-ink' : 'text-danger'
+            )}
+          >
+            {refreshFeedback.msg}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

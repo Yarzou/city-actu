@@ -13,9 +13,14 @@ interface FavoriteButtonProps {
   onToggled?: (articleId: number, favorited: boolean) => void
   /** Échec d'écriture : le message est à afficher, le bouton n'a pas changé d'état. */
   onError?: (message: string) => void
+  /**
+   * `plain` dans le pied de carte, `glass` posé sur la photo d'une grande carte : un
+   * bouton rond en verre, lisible quelle que soit l'image dessous.
+   */
+  variant?: 'plain' | 'glass'
 }
 
-export function FavoriteButton({ articleId, userId, initialFavorited, onToggled, onError }: FavoriteButtonProps) {
+export function FavoriteButton({ articleId, userId, initialFavorited, onToggled, onError, variant = 'plain' }: FavoriteButtonProps) {
   const [favorited, setFavorited] = useState(initialFavorited)
   const [loading, setLoading]     = useState(false)
 
@@ -42,23 +47,22 @@ export function FavoriteButton({ articleId, userId, initialFavorited, onToggled,
   }
 
   // `aria-label` et non `title` : l'infobulle ne s'affiche jamais au toucher et n'est
-  // pas annoncée de façon fiable — le bouton était sans nom pour un lecteur d'écran
-  // mobile. `aria-pressed` porte l'état, qui n'était jusqu'ici que la couleur du cœur.
-  // Boîte de 40px alignée sur les autres actions de la carte, avec 8px d'écart.
+  // pas annoncée de façon fiable. `aria-pressed` porte l'état, qui sinon ne serait que
+  // la couleur du cœur.
   return (
     <button
+      type="button"
       onClick={toggle}
       disabled={loading}
       aria-label={favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'}
       aria-pressed={favorited}
       className={cn(
-        'inline-flex items-center justify-center size-10 rounded-lg transition-colors focus-ring',
-        favorited
-          ? 'text-red-500 hover:bg-red-50'
-          : 'text-gray-500 hover:text-red-400 hover:bg-red-50'
+        'inline-flex size-10 items-center justify-center rounded-full transition-colors focus-ring disabled:opacity-60',
+        variant === 'glass' && 'glass',
+        favorited ? 'text-heart' : variant === 'glass' ? 'text-ink' : 'text-ink-muted'
       )}
     >
-      <Heart className={cn('size-4', favorited && 'fill-current')} />
+      <Heart className={cn('size-5', favorited && 'fill-current')} strokeWidth={2} />
     </button>
   )
 }

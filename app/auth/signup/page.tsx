@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Newspaper, Loader2 } from 'lucide-react'
+import { MailCheck } from 'lucide-react'
+import { AuthShell, FieldGroup, FieldRow } from '@/components/auth/AuthShell'
+import { Button, buttonClass } from '@/components/ui/Button'
+import { Notice } from '@/components/ui/Notice'
 
 export default function SignupPage() {
   const [email, setEmail]         = useState('')
@@ -44,88 +47,67 @@ export default function SignupPage() {
 
   if (done) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
-          <div className="text-4xl mb-4">📬</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Vérifiez vos emails</h1>
-          <p className="text-gray-600 text-sm">
-            Un lien de confirmation a été envoyé à <strong>{email}</strong>.<br />
-            Cliquez dessus pour activer votre compte.
+      <AuthShell title="Vérifiez vos emails">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full bg-accent-soft text-accent">
+            <MailCheck className="size-7" aria-hidden="true" />
+          </span>
+          <p className="text-body text-ink-muted">
+            Un lien de confirmation a été envoyé à <strong className="text-ink">{email}</strong>.
+            Touchez-le pour activer votre compte.
           </p>
-          <Link href="/" className="mt-6 inline-block text-brand-600 hover:underline text-sm">
-            Retour à l&apos;accueil
+          <Link href="/la-chapelle-sur-erdre" className={buttonClass('secondary', 'lg', 'mt-2')}>
+            Retour aux actus
           </Link>
         </div>
-      </div>
+      </AuthShell>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-brand-700 font-semibold text-xl mb-2">
-            <Newspaper className="size-6" />
-            Ville Actu
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Créer un compte</h1>
-          <p className="text-sm text-gray-500 mt-1">Favoris et alertes d&apos;actualités</p>
-        </div>
+    <AuthShell title="Créer un compte" subtitle="Favoris, résumé de la semaine, connexion par Face ID.">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        {error && <Notice tone="danger">{error}</Notice>}
+        <FieldGroup>
+          <FieldRow
+            label="Prénom"
+            type="text"
+            autoComplete="given-name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="ou un pseudo"
+          />
+          <FieldRow
+            label="E-mail"
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="vous@exemple.fr"
+          />
+          <FieldRow
+            label="Mot de passe"
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="8 caractères min."
+          />
+        </FieldGroup>
+        <Button type="submit" loading={loading}>
+          Créer mon compte
+        </Button>
+      </form>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Prénom / Pseudo</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              placeholder="Marie"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              placeholder="vous@exemple.fr"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-              placeholder="8 caractères minimum"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading && <Loader2 className="size-4 animate-spin" />}
-            Créer mon compte
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-gray-500 mt-4">
-          Déjà un compte ?{' '}
-          <Link href="/auth/login" className="text-brand-600 hover:underline font-medium">
-            Se connecter
-          </Link>
-        </p>
-      </div>
-    </div>
+      <p className="mt-1 text-center text-subhead text-ink-muted">
+        Déjà un compte ?{' '}
+        <Link href="/auth/login" className="font-semibold text-accent focus-ring">
+          Se connecter
+        </Link>
+      </p>
+    </AuthShell>
   )
 }

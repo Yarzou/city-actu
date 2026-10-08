@@ -1,8 +1,22 @@
 import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { extendTailwindMerge } from 'tailwind-merge'
 import type { Article } from '@/lib/types'
 import { isUnknownTime, parisDateISO, parisWallClock } from '@/lib/fetchers/dates'
 import { addCivilDays, civilDateToISO, parseCivilDate } from '@/lib/feed/paris-time'
+
+/**
+ * tailwind-merge ne connaît pas l'échelle typographique iOS de `globals.css` : il
+ * prend `text-caption` ou `text-body` pour des couleurs, et les supprime dès qu'une
+ * couleur suit (`text-accent`). Les libellés de la barre d'onglets de Fridge passaient
+ * ainsi de 11 à 16 px. On lui déclare ces tailles.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [{ text: ['large-title', 'title', 'headline', 'body', 'subhead', 'footnote', 'caption'] }],
+    },
+  },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -165,12 +179,35 @@ export function groupByDay<T extends Pick<Article, 'published_at' | 'event_end_d
 /** « Aujourd'hui – mardi 29 septembre », « jeudi 15 janvier 2027 », « Sans date ». */
 export function formatDayHeader(dateKey: string, now: Date = new Date()): string {
   if (dateKey === UNDATED_DAY_KEY) return 'Sans date'
+  const long = longDayLabel(dateKey, now)
+  const relative = relativeDayLabel(dateKey, now)
+  return relative ? `${relative} – ${long}` : long
+}
+
+/** « samedi 10 octobre », avec l'année seulement si elle diffère de l'année en cours. */
+function longDayLabel(dateKey: string, now: Date): string {
   // Midi UTC tombe toujours le même jour civil à Paris (13 h ou 14 h).
   const at = new Date(`${dateKey}T12:00:00Z`)
   const { today } = relativeDayKeys(now)
-  const long = dateKey.slice(0, 4) === today.slice(0, 4) ? LONG_DAY.format(at) : LONG_DAY_YEAR.format(at)
+  return dateKey.slice(0, 4) === today.slice(0, 4) ? LONG_DAY.format(at) : LONG_DAY_YEAR.format(at)
+}
+
+/**
+ * Les deux moitiés d'un en-tête de jour, pour les styler séparément : le libellé fort
+ * (« Aujourd'hui », « Demain », ou le jour de la semaine) et son complément discret
+ * (la date). « Aujourd'hui » est mis en avant dans le corail de la palette.
+ */
+export function dayHeaderParts(
+  dateKey: string,
+  now: Date = new Date()
+): { relative: string; long: string; isToday: boolean } {
+  if (dateKey === UNDATED_DAY_KEY) return { relative: 'Sans date', long: '', isToday: false }
+  const long = longDayLabel(dateKey, now)
   const relative = relativeDayLabel(dateKey, now)
-  return relative ? `${relative} – ${long}` : long
+  if (relative) return { relative, long, isToday: dateKey === relativeDayKeys(now).today }
+  // « samedi 10 octobre » → « Samedi » + « 10 octobre »
+  const [weekday, ...rest] = long.split(' ')
+  return { relative: weekday.charAt(0).toUpperCase() + weekday.slice(1), long: rest.join(' '), isToday: false }
 }
 
 function sanitizeHtml(input: string): string {
