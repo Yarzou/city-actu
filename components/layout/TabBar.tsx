@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type R
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Heart, MapPin, Newspaper, Sparkles, type LucideIcon } from 'lucide-react'
-import { LIFT, MAGNIFY, magnifyOrigin, useLoupe, type Lens } from '@/components/ui/useLoupe'
+import { GlassLens } from '@/components/ui/GlassLens'
+import { useLoupe, type Lens } from '@/components/ui/useLoupe'
 import { pushTab, tabSearch, toHomeTab, type HomeTab } from '@/lib/feed/tabs'
 import { cn } from '@/lib/utils'
 
@@ -47,6 +48,8 @@ const TABS: Tab[] = [
 const INSET = 4
 /** Marge de la bulle autour de l'icône et du libellé, de chaque côté. */
 const PAD_X = 14
+/** La loupe dépasse la bulle de 13 px de chaque côté, soit 8 px au-delà de la barre. */
+const GROW = 13
 
 interface Slot {
   /** Bord gauche du contenu (icône + libellé), depuis le bord intérieur de la barre */
@@ -55,8 +58,11 @@ interface Slot {
 }
 
 interface Bar {
-  /** Largeur intérieure (sans la bordure) */
+  /** Largeur et hauteur intérieures (sans la bordure) */
   width: number
+  height: number
+  /** Épaisseur de la bordure */
+  border: number
   slots: Slot[]
 }
 
@@ -96,9 +102,10 @@ function TabContent({ tab, ref }: { tab: Tab; ref?: Ref<HTMLSpanElement> }) {
  *
  * L'onglet choisi est marqué par une bulle taillée sur mesure autour de son icône et
  * de son libellé (mesurés par un ResizeObserver).
- * - Doigt posé, la bulle se soulève en loupe : elle rejoint le doigt, le suit d'un
- *   onglet à l'autre et agrandit vraiment ce qu'elle couvre (une copie des onglets,
- *   agrandie autour de son centre).
+ * - Doigt posé, la bulle se soulève en loupe de verre clair, plus grande que la barre
+ *   (GlassLens) : elle rejoint le doigt, le suit d'un onglet à l'autre et agrandit les
+ *   icônes et les libellés qu'elle couvre. Son bord floute et irise l'onglet voisin et
+ *   la page qui passe dessous.
  * - Au lâcher, elle se pose sur l'onglet touché, ou sur le plus proche après un
  *   glissé, en s'étirant comme une goutte d'eau, sans attendre la page.
  * Avec « Réduire les animations », elle se déplace sans effet.
@@ -134,6 +141,8 @@ export function TabBar() {
       const box = el.getBoundingClientRect()
       setBar({
         width: el.clientWidth,
+        height: el.clientHeight,
+        border: el.clientLeft,
         slots: contentRefs.current.map((content) => {
           const r = content?.getBoundingClientRect()
           return r ? { left: r.left - box.left - el.clientLeft, width: r.width } : { left: 0, width: 0 }
@@ -244,7 +253,8 @@ export function TabBar() {
     open(i)
   }
 
-  // Bulle : autour du contenu de l'onglet choisi, ou loupe sous le doigt.
+  // Bulle : autour du contenu de l'onglet choisi, ou cachée sous la loupe, qu'elle suit
+  // pour partir de là au lâcher.
   let bubble: { left: number; width: number } | null = null
   if (lifted) {
     bubble = { left: bubbleLeft(bar, lens.center, lens.width), width: lens.width }
@@ -259,92 +269,103 @@ export function TabBar() {
       className="bottom-tabbar fixed inset-x-0 z-40 flex justify-center px-4"
       style={{ paddingLeft: 'calc(var(--sal) + 1rem)', paddingRight: 'calc(var(--sar) + 1rem)' }}
     >
-      <div
-        ref={barRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
-        onClickCapture={(e) => {
-          // Fin d'un glissé : l'onglet est déjà ouvert, pas de second clic. Le clic du
-          // clavier (detail 0) n'est jamais celui d'un glissé.
-          if (swallowClick.current && e.detail !== 0) {
-            e.preventDefault()
-            e.stopPropagation()
-            swallowClick.current = false
-          }
-        }}
-        className={cn(
-          'glass-rim grid h-[62px] w-full max-w-md touch-none select-none grid-cols-4 rounded-full border border-tabbar-edge p-1 shadow-panel backdrop-blur-[10px] backdrop-saturate-[1.8] transition-colors duration-200',
-          lifted ? 'bg-tabbar-pressed' : 'bg-tabbar'
-        )}
-      >
-        {bubble && (
-          <span
-            aria-hidden="true"
-            className={cn(
-              'pointer-events-none absolute inset-y-1 left-0',
-              // Loupe : au-dessus des onglets, qu'elle cache et remplace par leur copie
-              // agrandie. Elle suit le doigt image par image, sans transition.
-              lifted
-                ? 'z-20'
-                : 'transition-[transform,width] duration-500 ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none'
-            )}
-            style={{ transform: `translateX(${bubble.left}px)`, width: bubble.width }}
-          >
+      {/* La loupe est posée à côté de la barre, pas dedans : le flou de la barre
+          limiterait le sien au contenu de la barre, et la page ne se verrait pas au
+          travers de ce qui déborde. */}
+      <div className="relative w-full max-w-md">
+        <div
+          ref={barRef}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+          onClickCapture={(e) => {
+            // Fin d'un glissé : l'onglet est déjà ouvert, pas de second clic. Le clic du
+            // clavier (detail 0) n'est jamais celui d'un glissé.
+            if (swallowClick.current && e.detail !== 0) {
+              e.preventDefault()
+              e.stopPropagation()
+              swallowClick.current = false
+            }
+          }}
+          className={cn(
+            'glass-rim grid h-[62px] w-full touch-none select-none grid-cols-4 rounded-full border border-tabbar-edge p-1 shadow-panel backdrop-blur-[10px] backdrop-saturate-[1.8] transition-colors duration-200',
+            lifted ? 'bg-tabbar-pressed' : 'bg-tabbar'
+          )}
+        >
+          {bubble && (
             <span
-              key={touched ? index : 'repos'}
+              aria-hidden="true"
               className={cn(
-                'relative block h-full w-full overflow-hidden rounded-full transition-[transform,background-color,box-shadow] duration-200',
-                lifted ? 'bg-loupe shadow-lens' : 'bg-bubble shadow-pill',
-                touched && !lifted && 'motion-safe:animate-bubble'
+                'pointer-events-none absolute inset-y-1 left-0',
+                // Sous la loupe, elle la suit image par image, sans transition.
+                !lifted && 'transition-[transform,width] duration-500 ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none'
               )}
-              style={lifted ? { transform: `scale(${LIFT})` } : undefined}
+              style={{ transform: `translateX(${bubble.left}px)`, width: bubble.width }}
             >
-              {lifted && (
-                // Copie des onglets, posée exactement sur l'originale puis agrandie autour
-                // du centre de la loupe : elle grossit ce qui est dessous.
-                <span
-                  className="absolute inset-y-0 grid grid-cols-4"
-                  style={{
-                    left: INSET - bubble.left,
-                    width: bar.width - INSET * 2,
-                    transform: `scale(${MAGNIFY})`,
-                    transformOrigin: `${magnifyOrigin(lens.center, bubble.left + bubble.width / 2) - INSET}px 50%`,
-                  }}
-                >
-                  {TABS.map((tab, i) => (
-                    <span key={tab.tab} className={cn('flex items-center justify-center', i === highlighted ? 'text-accent' : 'text-ink-muted')}>
-                      <TabContent tab={tab} />
-                    </span>
-                  ))}
-                </span>
-              )}
+              <span
+                key={touched ? index : 'repos'}
+                className={cn(
+                  'block h-full w-full rounded-full bg-bubble shadow-pill',
+                  lifted ? 'opacity-0' : touched && 'motion-safe:animate-bubble'
+                )}
+              />
             </span>
-          </span>
-        )}
+          )}
 
-        {TABS.map((tab, i) => (
-          <Link
-            key={tab.tab}
-            href={`${cityRoot}${tabSearch(tab.tab)}`}
-            draggable={false}
-            data-tab={i}
-            onClick={(event) => onTabClick(event, i)}
-            aria-current={i === activeIndex ? 'page' : undefined}
-            className={cn(
-              'relative z-10 flex items-center justify-center rounded-full transition-colors duration-300 focus-ring',
-              i === highlighted ? 'text-accent' : 'text-ink-muted'
-            )}
+          {TABS.map((tab, i) => (
+            <Link
+              key={tab.tab}
+              href={`${cityRoot}${tabSearch(tab.tab)}`}
+              draggable={false}
+              data-tab={i}
+              onClick={(event) => onTabClick(event, i)}
+              aria-current={i === activeIndex ? 'page' : undefined}
+              className={cn(
+                'relative z-10 flex items-center justify-center rounded-full transition-colors duration-300 focus-ring',
+                i === highlighted ? 'text-accent' : 'text-ink-muted'
+              )}
+            >
+              <TabContent
+                tab={tab}
+                ref={(el) => {
+                  contentRefs.current[i] = el
+                }}
+              />
+            </Link>
+          ))}
+        </div>
+        {lifted && bubble && (
+          <GlassLens
+            rest={{
+              left: bar.border + bubble.left,
+              top: bar.border + INSET,
+              width: bubble.width,
+              height: bar.height - INSET * 2,
+            }}
+            grow={GROW}
+            surface={{ left: bar.border, top: bar.border, width: bar.width, height: bar.height }}
+            surfaceClassName="bg-loupe"
+            content={{
+              left: bar.border + INSET,
+              top: bar.border + INSET,
+              width: bar.width - INSET * 2,
+              height: bar.height - INSET * 2,
+            }}
+            focus={bar.border + lens.center}
           >
-            <TabContent
-              tab={tab}
-              ref={(el) => {
-                contentRefs.current[i] = el
-              }}
-            />
-          </Link>
-        ))}
+            <span className="grid h-full grid-cols-4">
+              {TABS.map((tab, i) => (
+                <span
+                  key={tab.tab}
+                  className={cn('flex items-center justify-center', i === highlighted ? 'text-accent' : 'text-ink-muted')}
+                >
+                  <TabContent tab={tab} />
+                </span>
+              ))}
+            </span>
+          </GlassLens>
+        )}
       </div>
     </nav>
   )

@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-/** Soulèvement de la loupe sous le doigt, autour de son centre… */
-export const LIFT = 1.12
-/** … et grossissement de ce qu'elle couvre : ×1,25 en tout. */
-export const MAGNIFY = 1.12
+/** Grossissement de ce que couvre la loupe, autour du doigt. */
+export const MAGNIFY = 1.25
 /** Temps de réponse de la loupe qui rejoint puis suit le doigt, en ms. */
 const FOLLOW_MS = 45
 
@@ -16,10 +14,10 @@ export interface Lens {
 }
 
 /**
- * Loupe de verre façon iOS 26 (barre d'onglets, contrôle segmenté). Doigt
- * posé, elle part de la pastille au repos, rejoint le doigt et le suit image
- * par image. Le lissage se fait ici et non par une transition CSS : la copie
- * agrandie que porte la loupe reste ainsi calée sur l'original.
+ * Mouvement de la loupe de verre façon iOS 26 (barre d'onglets, contrôle segmenté ;
+ * son rendu est dans GlassLens). Doigt posé, elle part de la pastille au repos, rejoint
+ * le doigt et le suit image par image. Le lissage se fait ici et non par une transition
+ * CSS : la copie agrandie que porte la loupe reste ainsi calée sur l'original.
  * Avec « Réduire les animations », elle saute sous le doigt.
  */
 export function useLoupe() {
@@ -74,14 +72,4 @@ export function useLoupe() {
   }
 
   return { lens, grab, follow, drop }
-}
-
-/**
- * Origine du grossissement (×MAGNIFY) de la copie que porte la loupe, pour
- * qu'avec le soulèvement (×LIFT autour du centre de la loupe) le point visé
- * reste fixe : la loupe peut buter sur un bord sans décentrer ce qu'elle
- * agrandit.
- */
-export function magnifyOrigin(focus: number, center: number) {
-  return (focus * (1 - LIFT * MAGNIFY) - center * (1 - LIFT)) / (LIFT * (1 - MAGNIFY))
 }

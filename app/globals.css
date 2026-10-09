@@ -57,13 +57,16 @@
   --tabbar-edge: rgba(255, 255, 255, 0.65);
   --bubble: rgba(120, 120, 128, 0.16);     /* bulle de l'onglet choisi */
   --bubble-edge: rgba(255, 255, 255, 0.75);
-  --loupe: #ffffff;           /* loupe opaque : elle cache ce qu'elle agrandit */
+  --loupe: #ffffff;           /* centre de la loupe : il cache l'original qu'il agrandit */
   --knob: #ffffff;            /* pastille d'interrupteur */
-  --rim: rgba(255, 255, 255, 0.9);
+  /* Loupe de verre clair (components/ui/GlassLens.tsx, interrupteur) : on voit au travers */
+  --drop: rgba(255, 255, 255, 0.1);         /* teinte du verre */
+  --lens-edge: rgba(255, 255, 255, 0.9);    /* liseré */
+  --lens-glint: rgba(255, 255, 255, 0.95);  /* reflets sur les arêtes haute et basse */
+  --fringe-warm: rgba(255, 64, 160, 0.5);   /* frange colorée du bord (dispersion du verre) */
+  --fringe-cool: rgba(32, 168, 255, 0.5);
   --float: 0 8px 24px rgba(0, 0, 0, 0.12);
   --lift: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 10px rgba(0, 0, 0, 0.04);
-  --toast: #1c1c1e;
-  --toast-action: #8fd3ea;
   --scrim: rgba(0, 0, 0, 0.3);
 
   /* Safe area insets (iPhone notch / home indicator).
@@ -115,17 +118,20 @@ html.dark {
   --bubble-edge: rgba(255, 255, 255, 0.24);
   --loupe: #48484a;
   --knob: #ffffff;
-  --rim: rgba(255, 255, 255, 0.4);
+  --drop: rgba(255, 255, 255, 0.05);
+  --lens-edge: rgba(255, 255, 255, 0.35);
+  --lens-glint: rgba(255, 255, 255, 0.4);
+  --fringe-warm: rgba(255, 64, 160, 0.4);
+  --fringe-cool: rgba(32, 168, 255, 0.4);
   --float: 0 8px 24px rgba(0, 0, 0, 0.5);
   --lift: none;
-  --toast: #3a3a3c;
-  --toast-action: #8fd3ea;
   --scrim: rgba(0, 0, 0, 0.5);
 }
 
 /* ⚠️ Une ombre ne porte jamais le nom d'une couleur : Tailwind génère aussi
    `shadow-{couleur}` (teinte d'ombre), qui se combinerait avec la vraie ombre. D'où
-   `shadow-panel` et non `shadow-glass`, `shadow-lens` et non `shadow-loupe`. */
+   `shadow-panel` et non `shadow-glass`, `shadow-refraction` et non `shadow-lens`
+   (ni `shadow-drop`, la teinte du verre de la loupe). */
 @theme inline {
   --color-canvas: var(--canvas);
   --color-card: var(--card);
@@ -156,17 +162,23 @@ html.dark {
   --color-tabbar-edge: var(--tabbar-edge);
   --color-bubble: var(--bubble);
   --color-loupe: var(--loupe);
+  --color-drop: var(--drop);
   --color-knob: var(--knob);
-  --color-toast: var(--toast);
-  --color-toast-action: var(--toast-action);
   --color-scrim: var(--scrim);
 
   --shadow-lift: var(--lift);
   --shadow-float: var(--float);
   --shadow-panel: var(--float), inset 0 1px 0 var(--glass-hl);
   --shadow-pill: inset 0 0 0 0.5px var(--bubble-edge), 0 2px 10px rgba(0, 0, 0, 0.1);
-  --shadow-lens: inset 0 0 0 0.5px var(--bubble-edge), 0 3px 12px rgba(0, 0, 0, 0.2);
-  --shadow-rim: inset 0 0 0 1.5px var(--rim), inset 0 2px 3px var(--rim), 0 3px 12px rgba(0, 0, 0, 0.22);
+  /* Loupe de verre clair (GlassLens, interrupteur) : liseré, reflets sur les arêtes haute
+     et basse, frange colorée à gauche et à droite, ombre portée. */
+  --shadow-refraction:
+    inset 0 0 0 0.5px var(--lens-edge),
+    inset 0 1.5px 1px -0.5px var(--lens-glint),
+    inset 0 -1.5px 2px -1px var(--lens-glint),
+    inset 6px 0 7px -5px var(--fringe-warm),
+    inset -6px 0 7px -5px var(--fringe-cool),
+    0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 @theme {
@@ -203,6 +215,14 @@ html.dark {
     0% { transform: scale(1, 1); }
     30% { transform: scale(1.24, 0.84); }
     62% { transform: scale(0.95, 1.06); }
+    100% { transform: scale(1, 1); }
+  }
+
+  /* Loupe qui grandit à partir de la pastille au repos (--lens-from-x/y : rapport de
+     leurs tailles, posé par GlassLens). */
+  --animate-lens: lens 340ms cubic-bezier(0.34, 1.5, 0.5, 1);
+  @keyframes lens {
+    0% { transform: scale(var(--lens-from-x, 0.8), var(--lens-from-y, 0.7)); }
     100% { transform: scale(1, 1); }
   }
 }
@@ -275,6 +295,20 @@ input[type='search']::-webkit-search-cancel-button {
     background-color: var(--glass-strong);
     -webkit-backdrop-filter: blur(20px) saturate(190%) brightness(1.05);
     backdrop-filter: blur(20px) saturate(190%) brightness(1.05);
+  }
+  /* Loupe de verre clair (components/ui/GlassLens.tsx) : la copie agrandie, nette au
+     centre, s'efface vers le bord. Le bord laisse voir ce qui est sous le verre, flouté
+     et frangé de couleur. */
+  .lens-core {
+    -webkit-mask-image: radial-gradient(closest-side, #000 68%, transparent 96%);
+    mask-image: radial-gradient(closest-side, #000 68%, transparent 96%);
+  }
+  .lens-fringe {
+    -webkit-mask-image: radial-gradient(closest-side, transparent 62%, #000 90%);
+    mask-image: radial-gradient(closest-side, transparent 62%, #000 90%);
+  }
+  .lens-fringe > * {
+    filter: blur(1.5px) drop-shadow(2px 0 0 var(--fringe-warm)) drop-shadow(-2px 0 0 var(--fringe-cool));
   }
 }
 

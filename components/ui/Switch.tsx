@@ -9,8 +9,10 @@ import { cn } from '@/lib/utils'
  * 20 px, sans jamais sortir de la piste.
  *
  * Comme sur iOS 26, la pastille réagit au doigt :
- * - posé, elle s'allonge (37 px) et devient une loupe de verre clair : la piste se voit
- *   au travers, sous un liseré lumineux ;
+ * - posé, elle grandit (42 × 39) et devient une goutte de verre clair qui dépasse de la
+ *   piste de 4 px en haut, en bas et du côté où elle est : on voit au travers la couleur
+ *   de la piste et son bord, sous un liseré, des reflets et une frange colorée
+ *   (`shadow-refraction`) ;
  * - glissé, elle passe du côté où va le doigt, et l'interrupteur prend cette position
  *   au lâcher ;
  * - un simple toucher bascule l'interrupteur.
@@ -96,11 +98,16 @@ export function Switch({
       <span className={cn('relative h-[31px] w-[51px] rounded-full transition-colors duration-200', on ? 'bg-accent-fill' : 'bg-fill')}>
         <span
           className={cn(
-            'absolute left-0.5 top-0.5 h-[27px] rounded-full',
-            'transition-[transform,width,background-color,box-shadow] duration-300 ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none',
+            'absolute left-0.5 rounded-full',
+            'transition-[top,height,width,transform,background-color,box-shadow] duration-300 ease-[cubic-bezier(0.34,1.4,0.5,1)] motion-reduce:transition-none',
             pressed
-              ? cn('w-[37px] shadow-rim motion-safe:scale-[1.15]', on ? 'translate-x-[10px] bg-accent-fill' : 'translate-x-0 bg-fill')
-              : cn('w-[27px] bg-knob shadow-[0_2px_4px_rgba(0,0,0,0.2)]', on ? 'translate-x-5' : 'translate-x-0')
+              ? cn(
+                  // Goutte : 4 px au-delà de la piste en haut, en bas et du côté où elle est.
+                  // Flou et saturation légers : plus forts, la goutte se fondait dans la piste allumée.
+                  '-top-1 h-[39px] w-[42px] bg-drop shadow-refraction backdrop-blur-[0.5px] backdrop-saturate-[1.3]',
+                  on ? 'translate-x-[11px]' : '-translate-x-1.5'
+                )
+              : cn('top-0.5 h-[27px] w-[27px] bg-knob shadow-[0_2px_4px_rgba(0,0,0,0.2)]', on ? 'translate-x-5' : 'translate-x-0')
           )}
         />
       </span>
