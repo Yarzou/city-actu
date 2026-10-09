@@ -1,13 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Heart, TriangleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { onFavoriteChange } from '@/lib/feed/favorite-events'
 import { cn } from '@/lib/utils'
 import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
 import { FEED_LIST_CLASSES } from './FeedSkeleton'
+import { useTabActive } from './TabPanel'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { buttonClass } from '@/components/ui/Button'
 import type { Article as ArticleType } from '@/lib/types'
@@ -22,15 +24,27 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
   const [favorites, setFavorites] = useState<ArticleType[]>([])
   const [feedback, setFeedback] = useState<CardFeedback | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const active = useTabActive()
+  // Vrai dès qu'un chargement a abouti : les suivants se font en arrière-plan, sur la
+  // liste déjà affichée.
+  const loadedRef = useRef(false)
 
+  // Chargé au montage — caché compris : c'est le préchargement — puis de nouveau à
+  // chaque retour sur l'onglet, qui reste monté : un favori a pu être ajouté depuis le
+  // fil entre-temps. La liste affichée reste en place pendant ce rechargement.
   useEffect(() => {
+    if (!active && loadedRef.current) return
     const supabase = createClient()
     let cancelled = false
 
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (cancelled) return
-      if (!user) { setState('unauthenticated'); return }
+      if (!user) {
+        loadedRef.current = true
+        setState('unauthenticated')
+        return
+      }
 
       setUserId(user.id)
 
@@ -52,7 +66,9 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
         // Avant, l'échec tombait dans l'état « prêt » avec une liste vide : « Aucun
         // favori pour l'instant » pour une panne, indiscernable d'un vrai vide.
         console.error('[Favoris] chargement impossible:', error)
-        setState('error')
+        // Un rechargement de fond qui échoue laisse la liste déjà affichée : un écran
+        // d'erreur pour une actualisation que personne n'a demandée serait pire.
+        if (!loadedRef.current) setState('error')
         return
       }
 
@@ -61,12 +77,20 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
           .map((f) => f.article)
           .filter((a): a is ArticleType => Boolean(a))
       )
+      loadedRef.current = true
       setState('ready')
     }
 
     load()
     return () => { cancelled = true }
-  }, [citySlug, attempt])
+  }, [citySlug, attempt, active])
+
+  // Un favori retiré — ici ou depuis le fil, resté monté — quitte la liste tout de
+  // suite. Un ajout, lui, attend le rechargement au retour sur l'onglet : la carte du
+  // fil n'a pas toutes les colonnes qu'affiche celle-ci.
+  useEffect(() => onFavoriteChange(({ articleId, favorited }) => {
+    if (!favorited) setFavorites((prev) => prev.filter((a) => a.id !== articleId))
+  }), [])
 
   // Le retour à « chargement » se fait dans le gestionnaire du bouton, pas dans
   // l'effet : un setState synchrone en début d'effet déclenche un rendu en cascade.
@@ -78,12 +102,6 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
   const notify = useCallback((next: CardFeedback) => {
     setFeedback(next)
     window.setTimeout(() => setFeedback(null), 5000)
-  }, [])
-
-  // Un favori retiré depuis cet onglet quitte la liste : la carte restait affichée,
-  // cœur vide, jusqu'au prochain chargement.
-  const handleToggled = useCallback((articleId: number, favorited: boolean) => {
-    if (!favorited) setFavorites((prev) => prev.filter((a) => a.id !== articleId))
   }, [])
 
   if (state === 'loading') {
@@ -143,7 +161,6 @@ export function FavoritesTab({ citySlug }: FavoritesTabProps) {
             article={article}
             userId={userId}
             isFavorited
-            onFavoriteToggled={handleToggled}
             onFeedback={notify}
           />
         ))}

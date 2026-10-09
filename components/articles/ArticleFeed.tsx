@@ -6,6 +6,7 @@ import { ChevronDown, Newspaper, Search, TriangleAlert, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ArticleCard, type CardFeedback } from './ArticleCard'
 import { SkeletonCard } from './SkeletonCard'
+import { useTabActive } from './TabPanel'
 import { DateFilter } from './DateFilter'
 import { MonthNav, MonthView } from './MonthView'
 import { DayHeader } from './DayHeader'
@@ -18,6 +19,7 @@ import { buttonClass } from '@/components/ui/Button'
 import { categoryStyle } from '@/lib/category-style'
 import { queryArticles, queryMonthEvents, resolveFeedContext, type FeedContext } from '@/lib/feed/query'
 import { fetchLastFetchAt } from '@/lib/feed/last-update'
+import { onFavoriteChange } from '@/lib/feed/favorite-events'
 import { parisHorizonISO, formatParisFreshness, parisCivilDate } from '@/lib/feed/paris-time'
 import { parisDateISO } from '@/lib/fetchers/dates'
 import {
@@ -203,13 +205,23 @@ export function ArticleFeed({
 }: ArticleFeedProps) {
   const isHydrated = initialArticles !== null && Boolean(feedContext)
 
+  // Faux quand le fil vit dans un onglet caché (`TabPanel`) : préchargé avant qu'on
+  // l'ouvre, ou gardé en vie après qu'on l'a quitté. L'URL décrit alors un autre onglet.
+  const active = useTabActive()
+
   // Lu tôt : la sélection de catégories s'initialise depuis l'URL quand le serveur ne
   // l'a pas fournie (cas d'un changement d'onglet côté client).
   const searchParams = useSearchParams()
+  // Paramètres de départ. Un fil monté caché n'en lit aucun : ceux de l'URL sont les
+  // filtres de l'onglet affiché, ils ne le concernent pas — il part sans filtre et en
+  // liste, comme `pushTab` le lui demandera à sa première ouverture.
+  const [startParams] = useState<Pick<URLSearchParams, 'get'>>(() =>
+    active ? searchParams : new URLSearchParams()
+  )
 
   // Mode d'affichage et mois : du serveur quand il les a préparés, sinon de l'URL.
-  const startView: FeedView = initialView ?? parseViewParam(searchParams.get('v') ?? undefined)
-  const startMonth: CivilMonth = parseMonthParam(initialMonth ?? searchParams.get('m') ?? undefined)
+  const startView: FeedView = initialView ?? parseViewParam(startParams.get('v') ?? undefined)
+  const startMonth: CivilMonth = parseMonthParam(initialMonth ?? startParams.get('m') ?? undefined)
 
   const [articles, setArticles] = useState<FeedArticle[]>(initialArticles ?? [])
   const [categories, setCategories] = useState<CategoryType[]>(categoryList ?? [])
@@ -235,7 +247,7 @@ export function ArticleFeed({
   // à catégorie fixe : dans ce mode, `hideCategoryTabs` est posé et la sélection reste
   // vide.
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
-    () => initialCategories ?? parseCategoryParam(searchParams.get('cat') ?? undefined, categoryList ?? [])
+    () => initialCategories ?? parseCategoryParam(startParams.get('cat') ?? undefined, categoryList ?? [])
   )
   const [refreshFeedback, setRefreshFeedback] = useState<{ ok: boolean; msg: string } | null>(null)
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null)
@@ -316,9 +328,9 @@ export function ArticleFeed({
   const appliedUrlRef = useRef({
     d: serializeDateRange(deserializeRangeBounds(initialRange)) ?? '',
     q: initialSearch,
-    cat: serializeCategoryParam(initialCategories ?? parseCategoryParam(urlCategories, categoryList ?? [])) ?? '',
-    v: urlView,
-    m: urlMonth,
+    cat: serializeCategoryParam(initialCategories ?? parseCategoryParam(startParams.get('cat') ?? '', categoryList ?? [])) ?? '',
+    v: startParams.get('v') ?? '',
+    m: startParams.get('m') ?? '',
   })
   // Dernière valeur de recherche déjà répercutée en requête. Distincte de l'état :
   // le débounce fait passer `searchQuery` par la même valeur au montage, et sans ce
@@ -629,7 +641,13 @@ export function ArticleFeed({
 
   // Retour / avance dans l'historique : l'URL a changé sans passer par nos
   // gestionnaires, il faut adopter son état.
+  //
+  // Caché, le fil ignore l'URL : elle porte les filtres de l'onglet affiché, et les
+  // adopter effacerait les siens. Il la relit en redevenant visible (`active` en
+  // dépendance) — `pushTab` y a remis ses paramètres, rien ne bouge ; un retour arrière
+  // vers une entrée plus ancienne de cet onglet, lui, est bien rejoué.
   useEffect(() => {
+    if (!active) return
     if (!hasInitializedRef.current) return
     if (
       urlDate === appliedUrlRef.current.d &&
@@ -655,7 +673,7 @@ export function ArticleFeed({
       'replace'
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlDate, urlSearch, urlCategories, urlView, urlMonth])
+  }, [active, urlDate, urlSearch, urlCategories, urlView, urlMonth])
 
   // ─── Restauration de scroll au retour d'un lien externe ───────────────────────
   useEffect(() => {
@@ -834,15 +852,18 @@ export function ArticleFeed({
   }, [])
 
   // Le jeu des favoris suit les écritures réussies : sinon un article redevenu visible
-  // après un changement de filtre repartait avec l'état du premier rendu.
-  const handleFavoriteToggled = useCallback((articleId: number, favorited: boolean) => {
+  // après un changement de filtre repartait avec l'état du premier rendu. Toutes les
+  // écritures, d'où qu'elles viennent : ce fil reste monté pendant qu'on retire un
+  // favori depuis l'onglet « Favoris », son cœur doit se vider aussi.
+  useEffect(() => onFavoriteChange(({ articleId, favorited }) => {
     setFavorites((prev) => {
+      if (prev.has(articleId) === favorited) return prev
       const next = new Set(prev)
       if (favorited) next.add(articleId)
       else next.delete(articleId)
       return next
     })
-  }, [])
+  }), [])
 
   // Identité stable : ArticleCard est mémoïsé, une fonction recréée à chaque render
   // invaliderait la mémoïsation de toutes les cartes.
@@ -936,7 +957,6 @@ export function ArticleFeed({
         deleting={deletingArticleId === article.id}
         onDelete={handleDeleteArticle}
         onLocationSearch={handleLocationSearch}
-        onFavoriteToggled={handleFavoriteToggled}
         onFeedback={notify}
         scrollRestoreContext={scrollContext}
         scrollRestoreCount={view === 'mois' ? monthEvents.length : articles.length}

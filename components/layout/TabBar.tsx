@@ -187,10 +187,10 @@ export function TabBar() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
+    // Pas de remontée en haut ici : `CityHomePage` replace chaque onglet à la position où
+    // on l'avait laissé, et un onglet jamais ouvert en haut de page. La barre ne peut pas
+    // le faire elle-même, elle défilerait avant que le contenu change.
     pushTab(TABS[next].tab)
-    // `pushState` ne remonte pas en tête de page, et un onglet neuf ouvert au milieu du
-    // feed précédent paraît cassé.
-    window.scrollTo({ top: 0, behavior: 'auto' })
   }
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {

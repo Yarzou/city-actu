@@ -3,14 +3,18 @@
 import { useState } from 'react'
 import { Heart } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { announceFavorite } from '@/lib/feed/favorite-events'
 import { cn } from '@/lib/utils'
 
 interface FavoriteButtonProps {
   articleId: number
   userId: string
+  /**
+   * État tenu par le conteneur. Le bouton le suit quand il change de l'extérieur : un
+   * favori retiré depuis un autre onglet doit vider ce cœur-ci, les onglets restant
+   * montés une fois ouverts.
+   */
   initialFavorited: boolean
-  /** Appelé après une écriture **réussie** : l'appelant tient sa propre liste à jour. */
-  onToggled?: (articleId: number, favorited: boolean) => void
   /** Échec d'écriture : le message est à afficher, le bouton n'a pas changé d'état. */
   onError?: (message: string) => void
   /**
@@ -20,9 +24,17 @@ interface FavoriteButtonProps {
   variant?: 'plain' | 'glass'
 }
 
-export function FavoriteButton({ articleId, userId, initialFavorited, onToggled, onError, variant = 'plain' }: FavoriteButtonProps) {
+export function FavoriteButton({ articleId, userId, initialFavorited, onError, variant = 'plain' }: FavoriteButtonProps) {
   const [favorited, setFavorited] = useState(initialFavorited)
   const [loading, setLoading]     = useState(false)
+
+  // Ajustement pendant le rendu, pas dans un effet : le cœur change dans la même image
+  // que la prop, sans rendu intermédiaire à l'ancien état.
+  const [seen, setSeen] = useState(initialFavorited)
+  if (seen !== initialFavorited) {
+    setSeen(initialFavorited)
+    setFavorited(initialFavorited)
+  }
 
   async function toggle() {
     setLoading(true)
@@ -43,7 +55,8 @@ export function FavoriteButton({ articleId, userId, initialFavorited, onToggled,
 
     const next = !favorited
     setFavorited(next)
-    onToggled?.(articleId, next)
+    // Tous les onglets montés tiennent leur liste à jour, celui-ci compris.
+    announceFavorite({ articleId, favorited: next })
   }
 
   // `aria-label` et non `title` : l'infobulle ne s'affiche jamais au toucher et n'est

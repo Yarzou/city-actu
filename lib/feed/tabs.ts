@@ -67,6 +67,48 @@ export function tabSearch(tab: HomeTab): string {
   return tab === 'actus' ? '' : `?tab=${tab}`
 }
 
+/** Paramètres d'URL qui décrivent l'état d'un fil : date, recherche, catégories, mode, mois. */
+const FEED_PARAM_KEYS = ['d', 'q', 'cat', 'v', 'm'] as const
+
+/**
+ * Ce que chaque onglet avait à l'écran quand on l'a quitté : ses paramètres de fil et
+ * sa position de défilement.
+ *
+ * Les onglets restent montés une fois ouverts (`TabPanel`) : chacun garde ses filtres,
+ * comme sur iOS où l'on retrouve un onglet là où on l'avait laissé. Mais l'URL, elle,
+ * n'en décrit qu'un. En revenant sur un onglet, `pushTab` y remet donc ses paramètres
+ * à lui — sinon le fil, qui adopte l'URL dès qu'il redevient visible, verrait des
+ * filtres effacés et rechargerait pour rien.
+ *
+ * Au niveau du module : la barre d'onglets vit dans le layout, hors de l'arbre de la
+ * page. `CityHomePage` écrit les paramètres au fil de l'eau et vide tout au démontage :
+ * la mémoire ne survit pas aux onglets qu'elle décrit.
+ */
+const tabMemory = new Map<HomeTab, { params: string; scrollY?: number }>()
+
+function feedParams(search: Pick<URLSearchParams, 'get'>): string {
+  const params = new URLSearchParams()
+  for (const key of FEED_PARAM_KEYS) {
+    const value = search.get(key)
+    if (value) params.set(key, value)
+  }
+  return params.toString()
+}
+
+/** Note les paramètres de fil de l'onglet affiché. Appelé à chaque changement d'URL. */
+export function rememberTabParams(tab: HomeTab, search: Pick<URLSearchParams, 'get'>) {
+  tabMemory.set(tab, { ...tabMemory.get(tab), params: feedParams(search) })
+}
+
+/** Position de défilement de l'onglet au moment où on l'a quitté ; haut de page sinon. */
+export function rememberedScrollY(tab: HomeTab): number {
+  return tabMemory.get(tab)?.scrollY ?? 0
+}
+
+export function forgetTabMemory() {
+  tabMemory.clear()
+}
+
 /**
  * Change d'onglet **sans navigation** : `history.pushState`, que le routeur d'App
  * Router intercepte pour rafraîchir `useSearchParams` sans aller-retour serveur.
@@ -76,16 +118,21 @@ export function tabSearch(tab: HomeTab): string {
  * complète — `loading.tsx`, requête RSC, `queryArticles` rejoué côté serveur — soit
  * ~1,5 s de latence au doigt sur mobile, alors que les onglets desktop étaient
  * instantanés parce qu'ils passaient déjà par ici.
+ *
+ * Les paramètres de fil de l'onglet quitté sont retirés, ceux de l'onglet visé remis
+ * (voir `tabMemory`) : un onglet jamais ouvert part sans filtre et en liste. La
+ * position de défilement est notée ici, avant que l'URL change — après, le contenu
+ * affiché n'est plus celui de l'onglet quitté.
  */
 export function pushTab(tab: HomeTab) {
   if (typeof window === 'undefined') return
   const params = new URLSearchParams(window.location.search)
+  tabMemory.set(toHomeTab(params.get('tab')), { params: feedParams(params), scrollY: window.scrollY })
+
   if (tab === 'actus') params.delete('tab')
   else params.set('tab', tab)
-  // Changer d'onglet remet les filtres à zéro : ils portent sur un feed précis.
-  params.delete('d')
-  params.delete('q')
-  params.delete('cat')
+  for (const key of FEED_PARAM_KEYS) params.delete(key)
+  for (const [key, value] of new URLSearchParams(tabMemory.get(tab)?.params ?? '')) params.set(key, value)
 
   const query = params.toString()
   window.history.pushState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)

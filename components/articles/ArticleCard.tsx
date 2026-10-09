@@ -26,8 +26,6 @@ interface ArticleCardProps {
    * Absent = lieu affiché en simple texte (aucun feed pour porter la recherche).
    */
   onLocationSearch?: (locality: string) => void
-  /** Favori ajouté ou retiré avec succès : le conteneur tient sa liste à jour. */
-  onFavoriteToggled?: (articleId: number, favorited: boolean) => void
   /**
    * Messages à afficher hors de la carte : échec d'un favori, « Lien copié ». La carte
    * n'a pas de place pour un bandeau, c'est le conteneur qui l'a.
@@ -78,7 +76,7 @@ function CategoryTile({ style, className }: { style: CategoryStyle; className?: 
 // Mémoïsé : sans ça toute la liste se re-rendait à chaque changement d'état du feed
 // (frappe dans la recherche, bandeau de retour…), et chaque carte refait une mesure
 // DOM synchrone dans son useLayoutEffect.
-export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, onFavoriteToggled, onFeedback, scrollRestoreContext, scrollRestoreCount, priority = false, variant = 'compact' }: ArticleCardProps) {
+export const ArticleCard = memo(function ArticleCard({ article, userId, isFavorited = false, canDelete = false, deleting = false, onDelete, onLocationSearch, onFeedback, scrollRestoreContext, scrollRestoreCount, priority = false, variant = 'compact' }: ArticleCardProps) {
   const style = categoryStyle(article.category?.slug)
   const categoryName = article.category?.name ?? 'Actualité'
 
@@ -252,7 +250,6 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
                 articleId={article.id}
                 userId={userId}
                 initialFavorited={isFavorited}
-                onToggled={onFavoriteToggled}
                 onError={onFeedback ? (msg) => onFeedback({ ok: false, msg }) : undefined}
                 variant="glass"
               />
@@ -346,7 +343,6 @@ export const ArticleCard = memo(function ArticleCard({ article, userId, isFavori
             articleId={article.id}
             userId={userId}
             initialFavorited={isFavorited}
-            onToggled={onFavoriteToggled}
             onError={onFeedback ? (msg) => onFeedback({ ok: false, msg }) : undefined}
           />
         )}
